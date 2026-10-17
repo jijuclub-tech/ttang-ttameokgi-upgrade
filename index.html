@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🎮 땅따먹기 업그레이드</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460); color: white; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+  h1 { font-size: 2.5em; text-shadow: 0 0 10px #ffd700, 0 0 20px #ff6b6b; margin-bottom: 10px; animation: glow 2s infinite alternate; }
+  @keyframes glow { from { text-shadow: 0 0 10px #ffd700; } to { text-shadow: 0 0 20px #ff6b6b, 0 0 30px #ffd700; } }
+  .score { font-size: 1.5em; margin: 10px; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 15px; border: 2px solid #ffd700; }
+  .board { display: grid; grid-template-columns: repeat(8, 40px); gap: 4px; margin: 20px; background: rgba(255,255,255,0.1); padding: 15px; border-radius: 20px; box-shadow: 0 0 30px rgba(255,215,0,0.5); }
+  .cell { width: 40px; height: 40px; background: #4a5568; border-radius: 8px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
+  .cell:hover { transform: scale(1.1); box-shadow: 0 0 10px #fff; }
+  .cell.p1 { background: linear-gradient(45deg, #ff6b6b, #ee5a24); box-shadow: 0 0 15px #ff6b6b; }
+  .cell.p2 { background: linear-gradient(45deg, #48dbfb, #0abde3); box-shadow: 0 0 15px #48dbfb; }
+  .cell.power { background: linear-gradient(45deg, #f9ca24, #f0932b); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { transform: scale(1.05); } }
+  button { background: linear-gradient(45deg, #ffd700, #ff9f43); border: none; padding: 15px 30px; font-size: 1.2em; font-weight: bold; border-radius: 25px; cursor: pointer; margin: 10px; box-shadow: 0 5px 15px rgba(255,215,0,0.5); transition: transform 0.1s; }
+  button:hover { transform: scale(1.05); }
+  button:active { transform: scale(0.95); }
+  .menu-card { background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 20px; padding: 30px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); max-width: 400px; margin: 20px; border: 3px solid #ffd700; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="menu" class="menu-card">
+  <h1>🎮 땅따먹기</h1>
+  <p style="font-size:1.2em; margin:15px 0;">영역을 점령하고 승리하세요!<br>더 재미있게 업그레이드된 버전</p>
+  <button onclick="startGame()">🚀 게임 시작</button>
+  <p style="margin-top:20px; font-size:0.9em; opacity:0.8;">화려한 메뉴 카드 스타일 적용 완료</p>
+</div>
+
+<div id="game" class="hidden">
+  <h1>땅따먹기 대전</h1>
+  <div class="score">플레이어 1: <span id="score1">0</span> | 플레이어 2: <span id="score2">0</span></div>
+  <div class="board" id="board"></div>
+  <button onclick="usePower()">⚡ 파워업 사용</button>
+  <button onclick="location.reload()">🔄 다시 시작</button>
+  <p id="status" style="margin-top:10px; font-size:1.2em;"></p>
+</div>
+
+<script>
+let currentPlayer = 1;
+let scores = [0, 0];
+let board = [];
+const SIZE = 8;
+let powerUsed = false;
+
+function startGame() {
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('game').classList.remove('hidden');
+  initBoard();
+}
+
+function initBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+  board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.x = x;
+      cell.dataset.y = y;
+      cell.onclick = () => claim(x, y);
+      boardEl.appendChild(cell);
+    }
+  }
+  // Starting positions
+  claim(0, 0, true);
+  claim(SIZE-1, SIZE-1, true);
+  updateStatus();
+}
+
+function claim(x, y, force = false) {
+  if (board[y][x] !== 0 && !force) return;
+  if (!force && !isAdjacent(x, y)) {
+    alert('인접한 칸만 점령할 수 있습니다!');
+    return;
+  }
+  board[y][x] = currentPlayer;
+  const cell = document.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+  cell.className = `cell p${currentPlayer}`;
+  scores[currentPlayer - 1]++;
+  updateScores();
+  currentPlayer = 3 - currentPlayer;
+  updateStatus();
+  checkWin();
+}
+
+function isAdjacent(x, y) {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && board[ny][nx] === currentPlayer) return true;
+    }
+  }
+  return false;
+}
+
+function usePower() {
+  if (powerUsed) { alert('이미 사용했습니다!'); return; }
+  powerUsed = true;
+  // Double claim or clear opponent
+  const opp = 3 - currentPlayer;
+  let cleared = 0;
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (board[y][x] === opp && Math.random() < 0.3) {
+        board[y][x] = 0;
+        document.querySelector(`[data-x="${x}"][data-y="${y}"]`).className = 'cell';
+        scores[opp - 1]--;
+        cleared++;
+      }
+    }
+  }
+  alert(`파워업! ${cleared}개 상대 영역 파괴!`);
+  updateScores();
+}
+
+function updateScores() {
+  document.getElementById('score1').textContent = scores[0];
+  document.getElementById('score2').textContent = scores[1];
+}
+
+function updateStatus() {
+  document.getElementById('status').textContent = `플레이어 ${currentPlayer}의 턴! 인접 칸을 클릭하세요.`;
+}
+
+function checkWin() {
+  const total = scores[0] + scores[1];
+  if (total >= SIZE * SIZE * 0.8) {
+    const winner = scores[0] > scores[1] ? 1 : scores[1] > scores[0] ? 2 : '무승부';
+    alert(`게임 종료! ${winner === '무승부' ? '무승부' : '플레이어 ' + winner + ' 승리!'}`);
+  }
+}
+</script>
+</body>
+</html>

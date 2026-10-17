@@ -8,7 +8,7 @@
   :root { --gold: #f0c14b; --neon: #ff00ff; --bg: #0a0a12; }
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; user-select: none; }
   body { background: var(--bg); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-  .arcade { width: 100%; max-width: 400px; background: #111; border: 4px solid var(--gold); border-radius: 8px; padding: 10px; box-shadow: 0 0 20px var(--neon); }
+  .arcade { width: 100%; max-width: 400px; background: #111; border: 4px solid var(--gold); border-radius: 8px; padding: 10px; box-shadow: 0 0 20px var(--neon); position: relative; }
   .menu { text-align: center; padding: 20px; }
   .menu h1 { font-size: 28px; color: var(--gold); text-shadow: 0 0 10px var(--neon); margin-bottom: 10px; }
   .menu p { margin: 10px 0; font-size: 14px; }
@@ -16,9 +16,29 @@
   .game { display: none; }
   #cv { width: 100%; background: #000; border: 2px solid var(--gold); touch-action: none; }
   .hud { display: flex; justify-content: space-between; font-size: 14px; margin: 5px 0; color: var(--gold); }
-  .joystick { width: 120px; height: 120px; background: rgba(255,255,255,0.1); border-radius: 50%; border: 2px solid var(--neon); margin: 10px auto; position: relative; display: none; }
-  .stick { width: 40px; height: 40px; background: var(--gold); border-radius: 50%; position: absolute; top: 40px; left: 40px; }
-  .stage-info { text-align: center; font-size: 12px; color: #aaa; }
+  /* 조이스틱을 화면 아래에 고정 */
+  .joystick {
+    width: 140px; height: 140px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+    border: 3px solid var(--neon);
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    z-index: 10;
+    touch-action: none;
+  }
+  .stick {
+    width: 50px; height: 50px;
+    background: var(--gold);
+    border-radius: 50%;
+    position: absolute;
+    top: 45px; left: 45px;
+    box-shadow: 0 0 10px var(--gold);
+  }
+  .stage-info { text-align: center; font-size: 12px; color: #aaa; margin: 5px 0; }
 </style>
 </head>
 <body>
@@ -26,8 +46,8 @@
   <div class="menu" id="menu">
     <h1>일원 오락실</h1>
     <p>땅따먹기 - 100% 성인 오락실</p>
-    <p>1단계: 표준 조작 (D-Pad)</p>
-    <p>2단계: 중력+바람 + 화면 조이스틱</p>
+    <p>1단계: 좌우상하 + 대각선 지원</p>
+    <p>2단계: 중력+바람 + 화면 하단 조이스틱</p>
     <p>바탕화면이 점령에 따라 섹시해집니다</p>
     <button class="start" onclick="start(1)">1단계 시작</button>
     <button class="start" onclick="start(2)" style="margin-top:10px; background: linear-gradient(45deg,#ff00ff,#ff6b00);">2단계 시작</button>
@@ -39,28 +59,31 @@
       <span>몫숨 <span id="lives">3</span></span>
     </div>
     <canvas id="cv" width="320" height="240"></canvas>
-    <div class="joystick" id="joy"><div class="stick" id="stick"></div></div>
     <div class="stage-info" id="info">표준 조작 모드</div>
     <button onclick="back()">메뉴로</button>
   </div>
 </div>
 
+<!-- 화면 아래에 고정된 조이스틱 -->
+<div class="joystick" id="joy"><div class="stick" id="stick"></div></div>
+
 <script>
 const canvas = document.getElementById('cv');
 const ctx = canvas.getContext('2d');
-let stage = 1, claimed = 0, lives = 3, player = {x:10, y:10, vx:0, vy:0};
+let stage = 1, claimed = 0, lives = 3, player = {x:160, y:120, vx:0, vy:0};
 let gravity = 0, wind = 0, joyActive = false;
-const GRID = 40; // simplified for demo
 
 function start(s) {
   stage = s;
   document.getElementById('menu').style.display = 'none';
   document.getElementById('game').style.display = 'block';
   document.getElementById('stage').textContent = s;
-  document.getElementById('joy').style.display = s === 2 ? 'block' : 'none';
-  document.getElementById('info').textContent = s === 1 ? '1단계: 좌우상하 표준 조작' : '2단계: 중력+바람 적용, 조이스틱으로 방향 이끌기';
-  gravity = s === 2 ? 0.15 : 0;
-  wind = s === 2 ? 0.05 : 0;
+  document.getElementById('joy').style.display = 'block'; // 항상 화면 아래에 표시
+  document.getElementById('info').textContent = s === 1
+    ? '1단계: 조이스틱으로 대각선 포함 자유 이동'
+    : '2단계: 중력+바람 + 하단 조이스틱으로 방향 이끌기';
+  gravity = s === 2 ? 0.12 : 0;
+  wind = s === 2 ? 0.04 : 0;
   init();
   loop();
 }
@@ -78,77 +101,114 @@ function loop() {
 }
 
 function update() {
-  // Gravity & wind for stage 2
   player.vy += gravity;
   player.vx += (Math.random() - 0.5) * wind * 2;
   player.x += player.vx;
   player.y += player.vy;
-  // Bounds
-  if (player.x < 5 || player.x > 315) player.vx *= -0.5;
-  if (player.y < 5 || player.y > 235) player.vy *= -0.5;
-  player.x = Math.max(5, Math.min(315, player.x));
-  player.y = Math.max(5, Math.min(235, player.y));
-  // Simple claim progress
-  claimed = Math.min(70, claimed + 0.1);
+  // 범위 제한 + 반사
+  if (player.x < 8 || player.x > 312) { player.vx *= -0.6; player.x = Math.max(8, Math.min(312, player.x)); }
+  if (player.y < 8 || player.y > 232) { player.vy *= -0.6; player.y = Math.max(8, Math.min(232, player.y)); }
+  claimed = Math.min(70, claimed + 0.08);
   document.getElementById('pct').textContent = claimed.toFixed(1);
 }
 
 function draw() {
-  // Progressive sexy background based on claimed %
   const pct = claimed;
-  let bg = '#0a3d1a'; // green start
-  if (pct > 20) bg = '#3d1a2a'; // warmer
-  if (pct > 40) bg = '#5a1a3a'; // sensual
-  if (pct > 60) bg = '#8b1a4a'; // hotter
+  let bg = '#0a3d1a';
+  if (pct > 20) bg = '#3d1a2a';
+  if (pct > 40) bg = '#5a1a3a';
+  if (pct > 60) bg = '#8b1a4a';
   ctx.fillStyle = bg;
-  ctx.fillRect(0,0,320,240);
-  // Grid overlay
-  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-  for(let i=0;i<320;i+=10) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,240); ctx.stroke(); }
-  // Player
+  ctx.fillRect(0, 0, 320, 240);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  for (let i = 0; i < 320; i += 10) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 240); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i*0.75); ctx.lineTo(320, i*0.75); ctx.stroke();
+  }
   ctx.fillStyle = '#00ff88';
-  ctx.beginPath(); ctx.arc(player.x, player.y, 6, 0, Math.PI*2); ctx.fill();
-  // Sexy hint text when high
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, 7, 0, Math.PI * 2);
+  ctx.fill();
   if (pct > 50) {
-    ctx.fillStyle = 'rgba(255,100,150,0.8)';
+    ctx.fillStyle = 'rgba(255,100,150,0.9)';
     ctx.font = '12px monospace';
-    ctx.fillText('섹시 바탕 활성화', 10, 20);
+    ctx.fillText('섹시 바탕 활성화', 8, 18);
   }
 }
 
-// Joystick for stage 2
+// 화면 하단 고정 조이스틱 - 대각선 완전 지원
 const joy = document.getElementById('joy');
 const stick = document.getElementById('stick');
-let joyCenter = {x:60, y:60};
-joy.addEventListener('touchstart', e => { joyActive = true; e.preventDefault(); });
+function updateStick(clientX, clientY) {
+  const rect = joy.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  let dx = clientX - cx;
+  let dy = clientY - cy;
+  const maxDist = 45;
+  const dist = Math.min(maxDist, Math.hypot(dx, dy));
+  const ang = Math.atan2(dy, dx);
+  const sx = Math.cos(ang) * dist;
+  const sy = Math.sin(ang) * dist;
+  stick.style.left = (70 + sx - 25) + 'px';
+  stick.style.top = (70 + sy - 25) + 'px';
+  // 대각선 포함 자유 방향 이동
+  const power = dist / maxDist;
+  player.vx = Math.cos(ang) * power * 3.5;
+  player.vy = Math.sin(ang) * power * 3.5;
+}
+joy.addEventListener('touchstart', e => {
+  joyActive = true;
+  updateStick(e.touches[0].clientX, e.touches[0].clientY);
+  e.preventDefault();
+}, {passive: false});
 joy.addEventListener('touchmove', e => {
   if (!joyActive) return;
-  const rect = joy.getBoundingClientRect();
-  let x = e.touches[0].clientX - rect.left - 60;
-  let y = e.touches[0].clientY - rect.top - 60;
-  const dist = Math.min(40, Math.hypot(x,y));
-  const ang = Math.atan2(y,x);
-  stick.style.left = (60 + Math.cos(ang)*dist - 20) + 'px';
-  stick.style.top = (60 + Math.sin(ang)*dist - 20) + 'px';
-  player.vx = Math.cos(ang) * 2;
-  player.vy = Math.sin(ang) * 2;
+  updateStick(e.touches[0].clientX, e.touches[0].clientY);
   e.preventDefault();
+}, {passive: false});
+joy.addEventListener('touchend', () => {
+  joyActive = false;
+  stick.style.left = '45px';
+  stick.style.top = '45px';
+  player.vx = 0;
+  player.vy = 0;
 });
-joy.addEventListener('touchend', () => { joyActive = false; stick.style.left='40px'; stick.style.top='40px'; player.vx=0; player.vy=0; });
+joy.addEventListener('touchcancel', () => {
+  joyActive = false;
+  stick.style.left = '45px';
+  stick.style.top = '45px';
+  player.vx = 0;
+  player.vy = 0;
+});
 
 function back() {
   document.getElementById('game').style.display = 'none';
   document.getElementById('menu').style.display = 'block';
+  document.getElementById('joy').style.display = 'none';
 }
 
-// Stage 1 simple keyboard
+// 1단계에서도 키보드 대각선 지원
+const keys = {};
 window.addEventListener('keydown', e => {
-  if (stage !== 1) return;
-  if (e.key === 'ArrowUp') player.vy = -2;
-  if (e.key === 'ArrowDown') player.vy = 2;
-  if (e.key === 'ArrowLeft') player.vx = -2;
-  if (e.key === 'ArrowRight') player.vx = 2;
+  keys[e.key] = true;
+  applyKeys();
 });
+window.addEventListener('keyup', e => {
+  keys[e.key] = false;
+  applyKeys();
+});
+function applyKeys() {
+  if (stage !== 1) return;
+  let vx = 0, vy = 0;
+  if (keys['ArrowUp'] || keys['w']) vy -= 1;
+  if (keys['ArrowDown'] || keys['s']) vy += 1;
+  if (keys['ArrowLeft'] || keys['a']) vx -= 1;
+  if (keys['ArrowRight'] || keys['d']) vx += 1;
+  const len = Math.hypot(vx, vy) || 1;
+  player.vx = (vx / len) * 2.5;
+  player.vy = (vy / len) * 2.5;
+}
 </script>
 </body>
 </html>

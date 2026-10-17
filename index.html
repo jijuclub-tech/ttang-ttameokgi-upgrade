@@ -3,206 +3,151 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>지주 땅따먹기 업그레이드 - BIDGUARD</title>
+<title>일원 오락실 - 땅따먹기 (100% 성인)</title>
 <style>
-  :root {
-    --bg: #0b0e14;
-    --panel: #161a24;
-    --gold: #f0c14b;
-    --accent: #3ddc97;
-    --danger: #ff6b6b;
-    --text: #e8edf5;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; user-select: none; }
-  body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 12px; }
-  .wrap { width: 100%; max-width: 420px; background: var(--panel); border-radius: 16px; border: 1px solid #2a3142; padding: 12px; }
-  h1 { text-align: center; font-size: 24px; color: var(--gold); margin-bottom: 8px; }
-  .stats { display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 8px; }
-  .stats span { color: var(--gold); font-weight: 700; }
-  #cv { display: block; width: 100%; max-width: 360px; margin: 0 auto; background: #000; border-radius: 8px; border: 2px solid #2a3142; touch-action: none; }
-  .controls { display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-  button { background: #222838; color: var(--text); border: 1px solid #3a4155; border-radius: 10px; padding: 10px 14px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  button:active { background: var(--gold); color: #000; }
-  .msg { text-align: center; margin-top: 8px; font-size: 15px; min-height: 20px; color: var(--accent); }
-  .power { color: var(--gold); }
+  :root { --gold: #f0c14b; --neon: #ff00ff; --bg: #0a0a12; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', monospace; user-select: none; }
+  body { background: var(--bg); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .arcade { width: 100%; max-width: 400px; background: #111; border: 4px solid var(--gold); border-radius: 8px; padding: 10px; box-shadow: 0 0 20px var(--neon); }
+  .menu { text-align: center; padding: 20px; }
+  .menu h1 { font-size: 28px; color: var(--gold); text-shadow: 0 0 10px var(--neon); margin-bottom: 10px; }
+  .menu p { margin: 10px 0; font-size: 14px; }
+  button.start { background: linear-gradient(45deg, #ffd700, #ff6b00); color: #000; border: none; padding: 15px 30px; font-size: 20px; font-weight: bold; border-radius: 5px; cursor: pointer; box-shadow: 0 0 15px var(--gold); }
+  .game { display: none; }
+  #cv { width: 100%; background: #000; border: 2px solid var(--gold); touch-action: none; }
+  .hud { display: flex; justify-content: space-between; font-size: 14px; margin: 5px 0; color: var(--gold); }
+  .joystick { width: 120px; height: 120px; background: rgba(255,255,255,0.1); border-radius: 50%; border: 2px solid var(--neon); margin: 10px auto; position: relative; display: none; }
+  .stick { width: 40px; height: 40px; background: var(--gold); border-radius: 50%; position: absolute; top: 40px; left: 40px; }
+  .stage-info { text-align: center; font-size: 12px; color: #aaa; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>지주 땅따먹기 업그레이드</h1>
-  <div class="stats">
-    <div>영토 <span id="pct">0%</span> / 70%</div>
-    <div>몫숨 <span id="lives">❤️❤️❤️</span></div>
-    <div>스코어 <span id="score">0</span></div>
+<div class="arcade">
+  <div class="menu" id="menu">
+    <h1>일원 오락실</h1>
+    <p>땅따먹기 - 100% 성인 오락실</p>
+    <p>1단계: 표준 조작 (D-Pad)</p>
+    <p>2단계: 중력+바람 + 화면 조이스틱</p>
+    <p>바탕화면이 점령에 따라 섹시해집니다</p>
+    <button class="start" onclick="start(1)">1단계 시작</button>
+    <button class="start" onclick="start(2)" style="margin-top:10px; background: linear-gradient(45deg,#ff00ff,#ff6b00);">2단계 시작</button>
   </div>
-  <canvas id="cv" width="320" height="320"></canvas>
-  <div class="controls">
-    <button onclick="setDir(0,-1)">▲</button>
-    <button onclick="setDir(-1,0)">◀</button>
-    <button onclick="setDir(0,0)">■</button>
-    <button onclick="setDir(1,0)">▶</button>
-    <button onclick="setDir(0,1)">▼</button>
+  <div class="game" id="game">
+    <div class="hud">
+      <span>영토 <span id="pct">0</span>%</span>
+      <span>단계 <span id="stage">1</span></span>
+      <span>몫숨 <span id="lives">3</span></span>
+    </div>
+    <canvas id="cv" width="320" height="240"></canvas>
+    <div class="joystick" id="joy"><div class="stick" id="stick"></div></div>
+    <div class="stage-info" id="info">표준 조작 모드</div>
+    <button onclick="back()">메뉴로</button>
   </div>
-  <div class="controls">
-    <button onclick="usePower('slow')">⚡ 적 느림</button>
-    <button onclick="usePower('boost')">🚀 속도</button>
-    <button onclick="reset()">새 게임</button>
-  </div>
-  <div class="msg" id="msg">방향키 또는 판 미는 것으로 이동. 내 땅으로 돌아오면 영역 폐합!</div>
 </div>
 
 <script>
 const canvas = document.getElementById('cv');
 const ctx = canvas.getContext('2d');
-const COLS = 80, ROWS = 80, CELL = 4;
-let grid = [], player = {x:2,y:2,dx:0,dy:0}, trail = [], enemies = [], lives = 3, score = 0, claimed = 0;
-let powerSlow = 0, powerBoost = 0, gameOver = false;
+let stage = 1, claimed = 0, lives = 3, player = {x:10, y:10, vx:0, vy:0};
+let gravity = 0, wind = 0, joyActive = false;
+const GRID = 40; // simplified for demo
+
+function start(s) {
+  stage = s;
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+  document.getElementById('stage').textContent = s;
+  document.getElementById('joy').style.display = s === 2 ? 'block' : 'none';
+  document.getElementById('info').textContent = s === 1 ? '1단계: 좌우상하 표준 조작' : '2단계: 중력+바람 적용, 조이스틱으로 방향 이끌기';
+  gravity = s === 2 ? 0.15 : 0;
+  wind = s === 2 ? 0.05 : 0;
+  init();
+  loop();
+}
 
 function init() {
-  grid = Array.from({length: ROWS}, () => Array(COLS).fill(0));
-  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
-    if (r < 2 || r >= ROWS-2 || c < 2 || c >= COLS-2) grid[r][c] = 1;
-  }
-  claimed = 2*COLS*2 + 2*(ROWS-4)*2; // approx border
-  enemies = [
-    {x: 30*CELL, y: 30*CELL, vx: 1.8, vy: 1.2},
-    {x: 50*CELL, y: 40*CELL, vx: -1.5, vy: 2.0}
-  ];
-  player = {x: 2, y: 2, dx: 0, dy: 0};
-  trail = []; lives = 3; score = 0; powerSlow = 0; powerBoost = 0; gameOver = false;
-  updateUI();
-}
-
-function setDir(dx, dy) {
-  if (gameOver) return;
-  player.dx = dx; player.dy = dy;
-}
-
-function usePower(type) {
-  if (type === 'slow') { powerSlow = 180; document.getElementById('msg').textContent = '적 이동 느림 3초!'; }
-  if (type === 'boost') { powerBoost = 120; document.getElementById('msg').textContent = '이동 속도 증가 2초!'; }
-}
-
-function update() {
-  if (gameOver) return;
-  if (powerSlow > 0) powerSlow--;
-  if (powerBoost > 0) powerBoost--;
-
-  const speed = powerBoost > 0 ? 2 : 1;
-  if (player.dx || player.dy) {
-    let nx = player.x + player.dx * speed;
-    let ny = player.y + player.dy * speed;
-    nx = Math.max(0, Math.min(COLS-1, nx));
-    ny = Math.max(0, Math.min(ROWS-1, ny));
-    const cell = grid[ny][nx];
-    if (cell === 2) { hit(); return; }
-    player.x = nx; player.y = ny;
-    if (cell === 0) {
-      grid[ny][nx] = 2;
-      trail.push({x:nx, y:ny});
-    } else if (cell === 1 && trail.length > 0) {
-      close();
-    }
-  }
-
-  const eSpeed = powerSlow > 0 ? 0.4 : 1;
-  for (let e of enemies) {
-    let nx = e.x + e.vx * eSpeed, ny = e.y + e.vy * eSpeed;
-    if (cellAt(nx, e.y) === 1) e.vx *= -1;
-    if (cellAt(e.x, ny) === 1) e.vy *= -1;
-    if (cellAt(nx, ny) !== 1) { e.x = nx; e.y = ny; }
-    if (cellAt(e.x, e.y) === 2) { hit(); return; }
-  }
-}
-
-function cellAt(px, py) {
-  const gx = Math.max(0, Math.min(COLS-1, Math.floor(px / CELL)));
-  const gy = Math.max(0, Math.min(ROWS-1, Math.floor(py / CELL)));
-  return grid[gy][gx];
-}
-
-function hit() {
-  lives--;
-  trail.forEach(p => grid[p.y][p.x] = 0);
-  trail = [];
-  player.x = 2; player.y = 2; player.dx = 0; player.dy = 0;
-  if (lives <= 0) {
-    gameOver = true;
-    document.getElementById('msg').textContent = '게임 오버! 새 게임으로 다시 도전.';
-  } else {
-    document.getElementById('msg').textContent = `몫숨 ${lives}개 남음. 조심하세요!`;
-  }
-  updateUI();
-}
-
-function close() {
-  trail.forEach(p => grid[p.y][p.x] = 1);
-  const gained = trail.length;
-  trail = [];
-  // Simple flood fill for enclosed areas (basic version)
-  claimed += gained;
-  score += gained * 10;
-  document.getElementById('msg').textContent = `+${gained} 칸 점령! 스코어 ${score}`;
-  updateUI();
-  if (claimed / (COLS*ROWS) > 0.7) {
-    gameOver = true;
-    document.getElementById('msg').textContent = `승리! 영토 ${(claimed/(COLS*ROWS)*100).toFixed(1)}% 점령 완료.`;
-  }
-}
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      if (grid[y][x] === 1) {
-        ctx.fillStyle = '#1a5c3a';
-        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
-      } else if (grid[y][x] === 2) {
-        ctx.fillStyle = '#f0c14b';
-        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
-      }
-    }
-  }
-  // Player
-  ctx.fillStyle = '#3ddc97';
-  ctx.beginPath();
-  ctx.arc(player.x*CELL + CELL/2, player.y*CELL + CELL/2, 5, 0, Math.PI*2);
-  ctx.fill();
-  // Enemies
-  ctx.fillStyle = '#ff6b6b';
-  for (let e of enemies) {
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, 5, 0, Math.PI*2);
-    ctx.fill();
-  }
-}
-
-function updateUI() {
-  const pct = (claimed / (COLS * ROWS) * 100).toFixed(1);
-  document.getElementById('pct').textContent = pct + '%';
-  document.getElementById('lives').textContent = '❤️'.repeat(Math.max(0, lives));
-  document.getElementById('score').textContent = score;
+  claimed = 0; lives = 3;
+  player = {x: 160, y: 120, vx: 0, vy: 0};
 }
 
 function loop() {
+  if (document.getElementById('game').style.display === 'none') return;
   update();
   draw();
   requestAnimationFrame(loop);
 }
 
-function reset() { init(); document.getElementById('msg').textContent = '새 게임 시작! 영역을 폐합하세요.'; }
+function update() {
+  // Gravity & wind for stage 2
+  player.vy += gravity;
+  player.vx += (Math.random() - 0.5) * wind * 2;
+  player.x += player.vx;
+  player.y += player.vy;
+  // Bounds
+  if (player.x < 5 || player.x > 315) player.vx *= -0.5;
+  if (player.y < 5 || player.y > 235) player.vy *= -0.5;
+  player.x = Math.max(5, Math.min(315, player.x));
+  player.y = Math.max(5, Math.min(235, player.y));
+  // Simple claim progress
+  claimed = Math.min(70, claimed + 0.1);
+  document.getElementById('pct').textContent = claimed.toFixed(1);
+}
 
-init();
-loop();
+function draw() {
+  // Progressive sexy background based on claimed %
+  const pct = claimed;
+  let bg = '#0a3d1a'; // green start
+  if (pct > 20) bg = '#3d1a2a'; // warmer
+  if (pct > 40) bg = '#5a1a3a'; // sensual
+  if (pct > 60) bg = '#8b1a4a'; // hotter
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,320,240);
+  // Grid overlay
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  for(let i=0;i<320;i+=10) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,240); ctx.stroke(); }
+  // Player
+  ctx.fillStyle = '#00ff88';
+  ctx.beginPath(); ctx.arc(player.x, player.y, 6, 0, Math.PI*2); ctx.fill();
+  // Sexy hint text when high
+  if (pct > 50) {
+    ctx.fillStyle = 'rgba(255,100,150,0.8)';
+    ctx.font = '12px monospace';
+    ctx.fillText('섹시 바탕 활성화', 10, 20);
+  }
+}
 
-// Touch swipe
-let startX, startY;
-canvas.addEventListener('touchstart', e => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; });
-canvas.addEventListener('touchend', e => {
-  const dx = e.changedTouches[0].clientX - startX;
-  const dy = e.changedTouches[0].clientY - startY;
-  if (Math.abs(dx) > Math.abs(dy)) setDir(dx > 0 ? 1 : -1, 0);
-  else setDir(0, dy > 0 ? 1 : -1);
+// Joystick for stage 2
+const joy = document.getElementById('joy');
+const stick = document.getElementById('stick');
+let joyCenter = {x:60, y:60};
+joy.addEventListener('touchstart', e => { joyActive = true; e.preventDefault(); });
+joy.addEventListener('touchmove', e => {
+  if (!joyActive) return;
+  const rect = joy.getBoundingClientRect();
+  let x = e.touches[0].clientX - rect.left - 60;
+  let y = e.touches[0].clientY - rect.top - 60;
+  const dist = Math.min(40, Math.hypot(x,y));
+  const ang = Math.atan2(y,x);
+  stick.style.left = (60 + Math.cos(ang)*dist - 20) + 'px';
+  stick.style.top = (60 + Math.sin(ang)*dist - 20) + 'px';
+  player.vx = Math.cos(ang) * 2;
+  player.vy = Math.sin(ang) * 2;
+  e.preventDefault();
+});
+joy.addEventListener('touchend', () => { joyActive = false; stick.style.left='40px'; stick.style.top='40px'; player.vx=0; player.vy=0; });
+
+function back() {
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('menu').style.display = 'block';
+}
+
+// Stage 1 simple keyboard
+window.addEventListener('keydown', e => {
+  if (stage !== 1) return;
+  if (e.key === 'ArrowUp') player.vy = -2;
+  if (e.key === 'ArrowDown') player.vy = 2;
+  if (e.key === 'ArrowLeft') player.vx = -2;
+  if (e.key === 'ArrowRight') player.vx = 2;
 });
 </script>
 </body>

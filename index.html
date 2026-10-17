@@ -2,141 +2,208 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>🎮 땅따먹기 업그레이드</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>지주 땅따먹기 업그레이드 - BIDGUARD</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460); color: white; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
-  h1 { font-size: 2.5em; text-shadow: 0 0 10px #ffd700, 0 0 20px #ff6b6b; margin-bottom: 10px; animation: glow 2s infinite alternate; }
-  @keyframes glow { from { text-shadow: 0 0 10px #ffd700; } to { text-shadow: 0 0 20px #ff6b6b, 0 0 30px #ffd700; } }
-  .score { font-size: 1.5em; margin: 10px; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 15px; border: 2px solid #ffd700; }
-  .board { display: grid; grid-template-columns: repeat(8, 40px); gap: 4px; margin: 20px; background: rgba(255,255,255,0.1); padding: 15px; border-radius: 20px; box-shadow: 0 0 30px rgba(255,215,0,0.5); }
-  .cell { width: 40px; height: 40px; background: #4a5568; border-radius: 8px; cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
-  .cell:hover { transform: scale(1.1); box-shadow: 0 0 10px #fff; }
-  .cell.p1 { background: linear-gradient(45deg, #ff6b6b, #ee5a24); box-shadow: 0 0 15px #ff6b6b; }
-  .cell.p2 { background: linear-gradient(45deg, #48dbfb, #0abde3); box-shadow: 0 0 15px #48dbfb; }
-  .cell.power { background: linear-gradient(45deg, #f9ca24, #f0932b); animation: pulse 1s infinite; }
-  @keyframes pulse { 50% { transform: scale(1.05); } }
-  button { background: linear-gradient(45deg, #ffd700, #ff9f43); border: none; padding: 15px 30px; font-size: 1.2em; font-weight: bold; border-radius: 25px; cursor: pointer; margin: 10px; box-shadow: 0 5px 15px rgba(255,215,0,0.5); transition: transform 0.1s; }
-  button:hover { transform: scale(1.05); }
-  button:active { transform: scale(0.95); }
-  .menu-card { background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 20px; padding: 30px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); max-width: 400px; margin: 20px; border: 3px solid #ffd700; }
-  .hidden { display: none; }
+  :root {
+    --bg: #0b0e14;
+    --panel: #161a24;
+    --gold: #f0c14b;
+    --accent: #3ddc97;
+    --danger: #ff6b6b;
+    --text: #e8edf5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; user-select: none; }
+  body { background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 12px; }
+  .wrap { width: 100%; max-width: 420px; background: var(--panel); border-radius: 16px; border: 1px solid #2a3142; padding: 12px; }
+  h1 { text-align: center; font-size: 24px; color: var(--gold); margin-bottom: 8px; }
+  .stats { display: flex; justify-content: space-between; font-size: 16px; margin-bottom: 8px; }
+  .stats span { color: var(--gold); font-weight: 700; }
+  #cv { display: block; width: 100%; max-width: 360px; margin: 0 auto; background: #000; border-radius: 8px; border: 2px solid #2a3142; touch-action: none; }
+  .controls { display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button { background: #222838; color: var(--text); border: 1px solid #3a4155; border-radius: 10px; padding: 10px 14px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:active { background: var(--gold); color: #000; }
+  .msg { text-align: center; margin-top: 8px; font-size: 15px; min-height: 20px; color: var(--accent); }
+  .power { color: var(--gold); }
 </style>
 </head>
 <body>
-<div id="menu" class="menu-card">
-  <h1>🎮 땅따먹기</h1>
-  <p style="font-size:1.2em; margin:15px 0;">영역을 점령하고 승리하세요!<br>더 재미있게 업그레이드된 버전</p>
-  <button onclick="startGame()">🚀 게임 시작</button>
-  <p style="margin-top:20px; font-size:0.9em; opacity:0.8;">화려한 메뉴 카드 스타일 적용 완료</p>
-</div>
-
-<div id="game" class="hidden">
-  <h1>땅따먹기 대전</h1>
-  <div class="score">플레이어 1: <span id="score1">0</span> | 플레이어 2: <span id="score2">0</span></div>
-  <div class="board" id="board"></div>
-  <button onclick="usePower()">⚡ 파워업 사용</button>
-  <button onclick="location.reload()">🔄 다시 시작</button>
-  <p id="status" style="margin-top:10px; font-size:1.2em;"></p>
+<div class="wrap">
+  <h1>지주 땅따먹기 업그레이드</h1>
+  <div class="stats">
+    <div>영토 <span id="pct">0%</span> / 70%</div>
+    <div>몫숨 <span id="lives">❤️❤️❤️</span></div>
+    <div>스코어 <span id="score">0</span></div>
+  </div>
+  <canvas id="cv" width="320" height="320"></canvas>
+  <div class="controls">
+    <button onclick="setDir(0,-1)">▲</button>
+    <button onclick="setDir(-1,0)">◀</button>
+    <button onclick="setDir(0,0)">■</button>
+    <button onclick="setDir(1,0)">▶</button>
+    <button onclick="setDir(0,1)">▼</button>
+  </div>
+  <div class="controls">
+    <button onclick="usePower('slow')">⚡ 적 느림</button>
+    <button onclick="usePower('boost')">🚀 속도</button>
+    <button onclick="reset()">새 게임</button>
+  </div>
+  <div class="msg" id="msg">방향키 또는 판 미는 것으로 이동. 내 땅으로 돌아오면 영역 폐합!</div>
 </div>
 
 <script>
-let currentPlayer = 1;
-let scores = [0, 0];
-let board = [];
-const SIZE = 8;
-let powerUsed = false;
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+const COLS = 80, ROWS = 80, CELL = 4;
+let grid = [], player = {x:2,y:2,dx:0,dy:0}, trail = [], enemies = [], lives = 3, score = 0, claimed = 0;
+let powerSlow = 0, powerBoost = 0, gameOver = false;
 
-function startGame() {
-  document.getElementById('menu').classList.add('hidden');
-  document.getElementById('game').classList.remove('hidden');
-  initBoard();
+function init() {
+  grid = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (r < 2 || r >= ROWS-2 || c < 2 || c >= COLS-2) grid[r][c] = 1;
+  }
+  claimed = 2*COLS*2 + 2*(ROWS-4)*2; // approx border
+  enemies = [
+    {x: 30*CELL, y: 30*CELL, vx: 1.8, vy: 1.2},
+    {x: 50*CELL, y: 40*CELL, vx: -1.5, vy: 2.0}
+  ];
+  player = {x: 2, y: 2, dx: 0, dy: 0};
+  trail = []; lives = 3; score = 0; powerSlow = 0; powerBoost = 0; gameOver = false;
+  updateUI();
 }
 
-function initBoard() {
-  const boardEl = document.getElementById('board');
-  boardEl.innerHTML = '';
-  board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
-      const cell = document.createElement('div');
-      cell.className = 'cell';
-      cell.dataset.x = x;
-      cell.dataset.y = y;
-      cell.onclick = () => claim(x, y);
-      boardEl.appendChild(cell);
+function setDir(dx, dy) {
+  if (gameOver) return;
+  player.dx = dx; player.dy = dy;
+}
+
+function usePower(type) {
+  if (type === 'slow') { powerSlow = 180; document.getElementById('msg').textContent = '적 이동 느림 3초!'; }
+  if (type === 'boost') { powerBoost = 120; document.getElementById('msg').textContent = '이동 속도 증가 2초!'; }
+}
+
+function update() {
+  if (gameOver) return;
+  if (powerSlow > 0) powerSlow--;
+  if (powerBoost > 0) powerBoost--;
+
+  const speed = powerBoost > 0 ? 2 : 1;
+  if (player.dx || player.dy) {
+    let nx = player.x + player.dx * speed;
+    let ny = player.y + player.dy * speed;
+    nx = Math.max(0, Math.min(COLS-1, nx));
+    ny = Math.max(0, Math.min(ROWS-1, ny));
+    const cell = grid[ny][nx];
+    if (cell === 2) { hit(); return; }
+    player.x = nx; player.y = ny;
+    if (cell === 0) {
+      grid[ny][nx] = 2;
+      trail.push({x:nx, y:ny});
+    } else if (cell === 1 && trail.length > 0) {
+      close();
     }
   }
-  // Starting positions
-  claim(0, 0, true);
-  claim(SIZE-1, SIZE-1, true);
-  updateStatus();
-}
 
-function claim(x, y, force = false) {
-  if (board[y][x] !== 0 && !force) return;
-  if (!force && !isAdjacent(x, y)) {
-    alert('인접한 칸만 점령할 수 있습니다!');
-    return;
+  const eSpeed = powerSlow > 0 ? 0.4 : 1;
+  for (let e of enemies) {
+    let nx = e.x + e.vx * eSpeed, ny = e.y + e.vy * eSpeed;
+    if (cellAt(nx, e.y) === 1) e.vx *= -1;
+    if (cellAt(e.x, ny) === 1) e.vy *= -1;
+    if (cellAt(nx, ny) !== 1) { e.x = nx; e.y = ny; }
+    if (cellAt(e.x, e.y) === 2) { hit(); return; }
   }
-  board[y][x] = currentPlayer;
-  const cell = document.querySelector(`[data-x="${x}"][data-y="${y}"]`);
-  cell.className = `cell p${currentPlayer}`;
-  scores[currentPlayer - 1]++;
-  updateScores();
-  currentPlayer = 3 - currentPlayer;
-  updateStatus();
-  checkWin();
 }
 
-function isAdjacent(x, y) {
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = x + dx, ny = y + dy;
-      if (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && board[ny][nx] === currentPlayer) return true;
-    }
+function cellAt(px, py) {
+  const gx = Math.max(0, Math.min(COLS-1, Math.floor(px / CELL)));
+  const gy = Math.max(0, Math.min(ROWS-1, Math.floor(py / CELL)));
+  return grid[gy][gx];
+}
+
+function hit() {
+  lives--;
+  trail.forEach(p => grid[p.y][p.x] = 0);
+  trail = [];
+  player.x = 2; player.y = 2; player.dx = 0; player.dy = 0;
+  if (lives <= 0) {
+    gameOver = true;
+    document.getElementById('msg').textContent = '게임 오버! 새 게임으로 다시 도전.';
+  } else {
+    document.getElementById('msg').textContent = `몫숨 ${lives}개 남음. 조심하세요!`;
   }
-  return false;
+  updateUI();
 }
 
-function usePower() {
-  if (powerUsed) { alert('이미 사용했습니다!'); return; }
-  powerUsed = true;
-  // Double claim or clear opponent
-  const opp = 3 - currentPlayer;
-  let cleared = 0;
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
-      if (board[y][x] === opp && Math.random() < 0.3) {
-        board[y][x] = 0;
-        document.querySelector(`[data-x="${x}"][data-y="${y}"]`).className = 'cell';
-        scores[opp - 1]--;
-        cleared++;
+function close() {
+  trail.forEach(p => grid[p.y][p.x] = 1);
+  const gained = trail.length;
+  trail = [];
+  // Simple flood fill for enclosed areas (basic version)
+  claimed += gained;
+  score += gained * 10;
+  document.getElementById('msg').textContent = `+${gained} 칸 점령! 스코어 ${score}`;
+  updateUI();
+  if (claimed / (COLS*ROWS) > 0.7) {
+    gameOver = true;
+    document.getElementById('msg').textContent = `승리! 영토 ${(claimed/(COLS*ROWS)*100).toFixed(1)}% 점령 완료.`;
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (grid[y][x] === 1) {
+        ctx.fillStyle = '#1a5c3a';
+        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
+      } else if (grid[y][x] === 2) {
+        ctx.fillStyle = '#f0c14b';
+        ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
       }
     }
   }
-  alert(`파워업! ${cleared}개 상대 영역 파괴!`);
-  updateScores();
-}
-
-function updateScores() {
-  document.getElementById('score1').textContent = scores[0];
-  document.getElementById('score2').textContent = scores[1];
-}
-
-function updateStatus() {
-  document.getElementById('status').textContent = `플레이어 ${currentPlayer}의 턴! 인접 칸을 클릭하세요.`;
-}
-
-function checkWin() {
-  const total = scores[0] + scores[1];
-  if (total >= SIZE * SIZE * 0.8) {
-    const winner = scores[0] > scores[1] ? 1 : scores[1] > scores[0] ? 2 : '무승부';
-    alert(`게임 종료! ${winner === '무승부' ? '무승부' : '플레이어 ' + winner + ' 승리!'}`);
+  // Player
+  ctx.fillStyle = '#3ddc97';
+  ctx.beginPath();
+  ctx.arc(player.x*CELL + CELL/2, player.y*CELL + CELL/2, 5, 0, Math.PI*2);
+  ctx.fill();
+  // Enemies
+  ctx.fillStyle = '#ff6b6b';
+  for (let e of enemies) {
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 5, 0, Math.PI*2);
+    ctx.fill();
   }
 }
+
+function updateUI() {
+  const pct = (claimed / (COLS * ROWS) * 100).toFixed(1);
+  document.getElementById('pct').textContent = pct + '%';
+  document.getElementById('lives').textContent = '❤️'.repeat(Math.max(0, lives));
+  document.getElementById('score').textContent = score;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function reset() { init(); document.getElementById('msg').textContent = '새 게임 시작! 영역을 폐합하세요.'; }
+
+init();
+loop();
+
+// Touch swipe
+let startX, startY;
+canvas.addEventListener('touchstart', e => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; });
+canvas.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - startX;
+  const dy = e.changedTouches[0].clientY - startY;
+  if (Math.abs(dx) > Math.abs(dy)) setDir(dx > 0 ? 1 : -1, 0);
+  else setDir(0, dy > 0 ? 1 : -1);
+});
 </script>
 </body>
 </html>

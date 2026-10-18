@@ -9,7 +9,11 @@ const ctx = { document: { getElementById: el }, console, Math };
 vm.createContext(ctx);
 vm.runInContext(logic + `
 globalThis.G = {
-  initBoard, claimArea, movePlayer, updateEnemies, gameLoop,
+  initBoard, claimArea, movePlayer, updateEnemies, gameLoop, checkPlayerHit,
+  get stage() { return stage; }, set stage(v) { stage = v; },
+  get babies() { return babies; }, set babies(v) { babies = v; },
+  get playTime() { return playTime; }, set playTime(v) { playTime = v; },
+  get effects() { return effects; }, BABY_COLORS,
   get board() { return board; }, get trail() { return trail; }, get lives() { return lives; },
   set lives(v) { lives = v; }, get player() { return player; }, get enemies() { return enemies; },
   set enemies(v) { enemies = v; }, joystick, set running(v) { gameRunning = v; }, set paused(v) { paused = v; },
@@ -21,7 +25,7 @@ requestAnimationFrame = function () {};
 const G = ctx.G;
 let fail = 0;
 const check = (name, ok, info) => { console.log((ok ? 'PASS' : 'FAIL') + '  ' + name + (info ? '  (' + info + ')' : '')); if (!ok) fail++; };
-const fresh = () => { G.lives = 3; G.running = true; G.paused = false; G.initBoard(); };
+const fresh = (st = 1) => { G.lives = 3; G.running = true; G.paused = false; G.stage = st; G.initBoard(); };
 const W = 28, H = 36;
 
 // --- 버그 1: 대각선 선으로 둘러싼 땅 점령 ---
@@ -85,12 +89,13 @@ G.enemies = [{ x: 3, y: 3, vx: 0, vy: 0 }, { x: 14, y: 25, vx: 0, vy: 0 }];
 G.claimArea();
 check('bug4 내 땅 칸 위의 적 쪽 영역도 보호', G.board[30][3] === 0 && G.board[3][3] === 0, 'claimed=' + countClaimed());
 // 4-3: 적은 아래쪽에만 → 위쪽(9줄 x 26칸)만 점령, 적 칸이 선 위여도 동일
+// (claimArea를 직접 부를 때의 방어 코드. 실제 게임에서는 점령 전에 bigCrabOnTrail()로 죽음 처리 → 아래 ruleA 테스트)
 fresh();
 for (let x = 1; x < W - 1; x++) G.board[10][x] = 2;
 G.enemies = [{ x: 14, y: 10, vx: 0, vy: 0 }, { x: 14, y: 25, vx: 0, vy: 0 }];
 G.claimArea();
 { let up = 0; for (let y = 1; y < 10; y++) for (let x = 1; x < W - 1; x++) if (G.board[y][x] === 1) up++;
-  check('bug4 선 위 적이 있어도 양쪽이 열려 있으면 둘 다 보호(보수적)', up === 0 && G.board[30][3] === 0, 'upper claimed=' + up); }
+  check('bug4 claimArea 방어 코드: 선 위 적이 있으면 양쪽 모두 보호', up === 0 && G.board[30][3] === 0, 'upper claimed=' + up); }
 fresh();
 for (let x = 1; x < W - 1; x++) G.board[10][x] = 2;
 G.enemies = [{ x: 14, y: 20, vx: 0, vy: 0 }, { x: 14, y: 25, vx: 0, vy: 0 }];
@@ -104,6 +109,103 @@ for (const [label, ens] of [['적 0마리', []], ['적이 판 밖', [{ x: -5, y:
   G.enemies = ens;
   G.claimArea();
   check(`bug4 시작점 없음(${label}) → 선만 점령`, countClaimed() === borderCells + (W - 2), 'claimed=' + countClaimed() + ', expected=' + (borderCells + W - 2));
+}
+
+// --- 규칙 A: 큰 게가 고랑(선)에 닿으면 죽음 ---
+const still = (x, y, type) => ({ x, y, vx: 0, vy: 0, type, legPhase: 0 });
+fresh();
+G.board[10][5] = 2; G.board[10][6] = 2; G.trail.push([5, 10], [6, 10]);
+G.enemies = [still(6, 10, 'red'), still(20, 25, 'blue')];
+G.updateEnemies(0.016);
+check('ruleA 큰 게가 고랑 위 → 목숨 감소', G.lives === 2, 'lives=' + G.lives);
+check('ruleA 죽은 뒤 고랑 지워짐', countTrail() === 0 && G.trail.length === 0);
+// 점령 순간 큰 게가 고랑 위에 있음: movePlayer → claimArea 순서라 updateEnemies 전에 점령되던 문제
+fresh();
+{
+  const p = G.player; p.x = 0; p.y = 18;
+  const step = (nx, ny) => { G.joystick.active = true; G.joystick.nx = nx; G.joystick.ny = ny; G.movePlayer(0.1 / 0.52); };
+  for (let i = 0; i < 6; i++) step(1, 0);                 // (1..6, 18) 고랑
+  G.enemies = [still(3, 18, 'red'), still(20, 30, 'blue')];  // 홍게가 고랑 (3,18) 위로 들어옴
+  step(0, 1); for (let i = 0; i < 7; i++) step(-1, 0);    // 돌아와서 점령 시도
+  check('ruleA 점령 순간 큰 게가 고랑 위 → 점령 대신 죽음', G.lives === 2, 'lives=' + G.lives + ', claimed=' + countClaimed());
+  check('ruleA 이때 땅은 점령되지 않음(테두리만)', countClaimed() === borderCells && countTrail() === 0);
+}
+
+// --- 규칙 B: 새끼 게 ---
+const isBigColor = c => c === '#e63946' || c === '#1d4ed8';
+// 2단계까지는 안 나옴
+fresh(2); G.enemies = [still(10, 10, 'red'), still(10.2, 10, 'blue')];
+G.updateEnemies(0.016);
+check('babies 2단계: 홍게·청게가 만나도 새끼 없음', G.babies.length === 0);
+// 3단계: 만나면 2마리
+fresh(3); G.enemies = [still(10, 10, 'red'), still(10.2, 10, 'blue')];
+G.updateEnemies(0.016);
+{ const b = G.babies;
+  check('babies 3단계: 만나면 2마리 태어남', b.length === 2, 'n=' + b.length);
+  check('babies 두 마리 색이 서로 다르고 큰 게 색이 아님', b.length === 2 && b[0].color !== b[1].color && !isBigColor(b[0].color) && !isBigColor(b[1].color) && G.BABY_COLORS.includes(b[0].color), b.map(x => x.color).join(','));
+  check('babies 만난 자리에서 태어남', b.every(x => Math.abs(x.x - 10.1) < 0.2 && Math.abs(x.y - 10) < 0.2));
+  check('babies 크기가 작음(scale<1)', b.every(x => x.scale < 1)); }
+// 같은 색끼리는 안 낳음
+fresh(3); G.enemies = [still(10, 10, 'red'), still(10.2, 10, 'red')];
+G.updateEnemies(0.016);
+check('babies 홍게-홍게는 안 낳음', G.babies.length === 0);
+// 쿨다운
+fresh(3); G.enemies = [still(10, 10, 'red'), still(10.2, 10, 'blue')];
+G.updateEnemies(0.016);
+G.babies.forEach(b => { b.vx = 0; b.vy = 0; b.x = 20; b.y = 30; });
+G.playTime += 5; G.updateEnemies(0.016);
+check('babies 쿨다운: 5초 뒤 계속 붙어 있어도 추가 없음', G.babies.length === 2, 'n=' + G.babies.length);
+G.playTime += 5.1; G.updateEnemies(0.016);
+check('babies 쿨다운: 10초 지나면 다시 2마리', G.babies.length === 4, 'n=' + G.babies.length);
+// 최대 8마리
+fresh(3); G.enemies = [still(10, 10, 'red'), still(10.2, 10, 'blue')];
+G.babies = Array.from({ length: 7 }, (_, i) => ({ x: 5 + i, y: 30, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 }));
+G.updateEnemies(0.016);
+check('babies 7마리에서 만나면 1마리만 추가(최대 8)', G.babies.length === 8, 'n=' + G.babies.length);
+G.playTime += 11; G.updateEnemies(0.016);
+check('babies 8마리면 더 안 태어남', G.babies.length === 8, 'n=' + G.babies.length);
+// 새끼끼리는 번식 안 함
+fresh(3); G.enemies = [still(5, 5, 'red'), still(20, 30, 'blue')];
+G.babies = [{ x: 12, y: 12, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 },
+            { x: 12.1, y: 12, vx: 0, vy: 0, type: 'baby', color: '#22c55e', scale: 0.55, legPhase: 0 }];
+G.updateEnemies(0.016);
+check('babies 새끼끼리 만나도 번식 안 함', G.babies.length === 2);
+// 새끼 게가 움직임
+fresh(3); G.enemies = [still(5, 5, 'red'), still(20, 30, 'blue')];
+G.babies = [{ x: 14, y: 18, vx: 1.5, vy: 0.5, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 }];
+for (let i = 0; i < 30; i++) G.updateEnemies(0.016);
+check('babies 새끼 게가 움직임', Math.hypot(G.babies[0].x - 14, G.babies[0].y - 18) > 0.5);
+// 새끼 게가 고랑에 닿아도 아무 일 없음
+fresh(3); G.enemies = [still(5, 30, 'red'), still(20, 30, 'blue')];
+G.board[10][5] = 2; G.board[10][6] = 2; G.trail.push([5, 10], [6, 10]);
+G.player.x = 6; G.player.y = 10;
+G.babies = [{ x: 5, y: 10, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 }];
+G.updateEnemies(0.016);
+check('babies 새끼가 고랑 위 → 목숨 유지, 고랑 유지', G.lives === 3 && countTrail() === 2, 'lives=' + G.lives);
+// 새끼 게가 농부 몸에 닿으면 죽음 (정지 상태)
+fresh(3); G.enemies = [still(5, 30, 'red'), still(20, 30, 'blue')];
+G.player.x = 10; G.player.y = 10; G.joystick.active = false;
+G.babies = [{ x: 10.2, y: 10.1, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 }];
+G.gameLoop(5000); G.gameLoop(5016);
+check('babies 새끼가 농부 몸에 닿으면 목숨 감소', G.lives === 2, 'lives=' + G.lives);
+// 둘러싼 땅 안의 새끼 게는 사라지고 '+' 효과, 새끼는 영역 보호 안 함
+fresh(3); G.enemies = [still(20, 25, 'red'), still(15, 30, 'blue')];
+G.babies = [{ x: 3, y: 3, vx: 0, vy: 0, type: 'baby', color: '#a855f7', scale: 0.55, legPhase: 0 },
+            { x: 20, y: 20, vx: 0, vy: 0, type: 'baby', color: '#f97316', scale: 0.55, legPhase: 0 }];
+for (let i = 1; i < 10; i++) G.board[10 - i][i] = 2;
+G.claimArea();
+check('babies 새끼는 영역을 보호하지 않음(모서리 36칸 점령)', cornerCount() === 36, cornerCount() + '/36');
+check('babies 둘러싼 땅 안의 새끼 사라짐, 밖의 새끼는 남음', G.babies.length === 1 && G.babies[0].x === 20);
+check("babies 사라질 때 '+' 효과", G.effects.length === 1 && G.effects[0].text === '+');
+// 점령 순간 새끼가 고랑 위에 있어도 점령은 정상 (새끼는 고랑 무시)
+fresh(3); G.enemies = [still(20, 25, 'red'), still(15, 30, 'blue')];
+{
+  const p = G.player; p.x = 0; p.y = 18;
+  const step = (nx, ny) => { G.joystick.active = true; G.joystick.nx = nx; G.joystick.ny = ny; G.movePlayer(0.1 / 0.52); };
+  for (let i = 0; i < 6; i++) step(1, 0);
+  G.babies = [{ x: 3, y: 18, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 }];
+  step(0, 1); for (let i = 0; i < 7; i++) step(-1, 0);
+  check('babies 점령 순간 새끼가 고랑 위 → 죽지 않고 점령, 새끼는 사라짐', G.lives === 3 && countTrail() === 0 && G.babies.length === 0 && countClaimed() > borderCells, 'lives=' + G.lives + ', babies=' + G.babies.length);
 }
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASSED');

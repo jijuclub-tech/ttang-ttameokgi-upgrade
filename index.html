@@ -33,7 +33,7 @@
     background: rgba(0,20,40,0.9); border: 2px solid #00a0ff; border-radius: 10px;
     padding: 8px 4px; font-size: 18px; flex-shrink: 0;
   }
-  .status-item { text-align: center; min-width: 70px; }
+  .status-item { text-align: center; min-width: 58px; }
   .status-item span { display: block; font-size: 16px; opacity: 0.85; }
   .status-item strong { font-size: 22px; color: #00f0ff; }
   #game-container { flex: 1; width: 100%; display: flex; flex-direction: column; position: relative; min-height: 0; }
@@ -71,6 +71,7 @@
 
   <div id="game-screen" class="screen">
     <div class="status-bar">
+      <div class="status-item"><span>단계</span><strong id="stage">1</strong></div>
       <div class="status-item"><span>영토</span><strong id="territory">0%</strong></div>
       <div class="status-item"><span>목숨</span><strong id="lives">3</strong></div>
       <div class="status-item"><span>목표</span><strong id="goal">75%</strong></div>
@@ -86,6 +87,7 @@
       <div id="gameover-overlay" class="overlay">
         <h1 id="end-title" style="font-size:32px;">게임 종료</h1>
         <p id="end-msg" style="font-size:20px;">영토 점령률: 0%</p>
+        <button id="next-stage-btn" style="display:none;">다음 단계</button>
         <button id="retry-btn">다시 도전</button>
         <button id="to-start-btn" class="magenta">시작 화면</button>
       </div>
@@ -121,6 +123,18 @@ let joystick = { active: false, nx: 0, ny: 0, pointerId: null };
 let lastTime = 0;
 let canvas, ctx, cellSize;
 let animTime = 0;
+// 단계: 클리어하면 '다음 단계'로 올라감. 3단계부터 새끼 게 등장.
+let stage = 1;
+const BABY_STAGE = 3;
+const BABY_MAX = 8;              // 동시에 살아 있는 새끼 게 최대 수
+const BABY_COOLDOWN = 10;        // 같은 홍게·청게 쌍이 다시 낳기까지 (초)
+const CRAB_MEET_DIST = 0.7;      // 홍게와 청게가 만났다고 보는 거리
+const BABY_HIT_DIST = 0.4;       // 새끼 게와 농부 몸 충돌 거리 (큰 게 0.55)
+const BABY_COLORS = ['#facc15', '#22c55e', '#a855f7', '#f97316']; // 노랑·초록·보라·주황
+let babies = [];
+let pairCooldown = {};           // 'i-j' -> 다시 낳을 수 있는 playTime
+let playTime = 0;                // 일시정지·종료 중에는 멈추는 게임 시간
+let effects = [];                // 떠오르는 '+' 효과
 
 function initBoard() {
   board = Array.from({length: GRID_H}, () => Array(GRID_W).fill(0));
@@ -135,6 +149,11 @@ function initBoard() {
     { x: GRID_W * 0.65, y: GRID_H * 0.65, vx: -0.9, vy: 1.0, type: 'blue', legPhase: Math.PI }
   ];
   trail = [];
+  babies = [];
+  pairCooldown = {};
+  effects = [];
+  playTime = 0;
+  document.getElementById('stage').textContent = stage;
   updateTerritory();
 }
 
@@ -229,10 +248,12 @@ function drawFarmer(x, y, dir, size) {
   ctx.restore();
 }
 
-function drawCrab(e, size) {
-  const px = e.x * size, py = e.y * size;
-  const color = e.type === 'red' ? '#e63946' : '#1d4ed8';
-  const phase = animTime * 8 + e.legPhase;
+function drawCrab(e, cell) {
+  const px = e.x * cell, py = e.y * cell;
+  const color = e.color || (e.type === 'red' ? '#e63946' : '#1d4ed8');
+  const scale = e.scale || 1;      // 새끼 게는 작게
+  const size = cell * scale;
+  const phase = animTime * (e.legSpeed || 8) + e.legPhase;
   ctx.save();
   ctx.translate(px, py);
   const ang = Math.atan2(e.vy, e.vx);
@@ -246,7 +267,7 @@ function drawCrab(e, size) {
   ctx.beginPath(); ctx.arc(-size*0.1, -size*0.08, size*0.025, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(size*0.1, -size*0.08, size*0.025, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = Math.max(1, 2.5 * scale);
   ctx.beginPath(); ctx.moveTo(-size*0.25, -size*0.05); ctx.lineTo(-size*0.4, -size*0.15); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(size*0.25, -size*0.05); ctx.lineTo(size*0.4, -size*0.15); ctx.stroke();
   for (let i = 0; i < 3; i++) {
@@ -258,6 +279,23 @@ function drawCrab(e, size) {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+function drawEffects() {
+  effects.forEach(f => {
+    const a = Math.max(0, 1 - f.t / 1.0);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#fff200';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.font = `bold ${Math.round(cellSize * 1.4)}px sans-serif`;
+    ctx.textAlign = 'center';
+    const px = f.x * cellSize, py = (f.y - f.t * 1.5) * cellSize;
+    ctx.strokeText(f.text, px, py);
+    ctx.fillText(f.text, px, py);
+    ctx.restore();
+  });
 }
 
 function draw() {
@@ -281,6 +319,8 @@ function draw() {
   }
 
   enemies.forEach(e => drawCrab(e, cellSize));
+  babies.forEach(b => drawCrab(b, cellSize));
+  drawEffects();
 
   const dir = { x: joystick.nx || 1, y: joystick.ny || 0 };
   drawFarmer(player.x, player.y, dir, cellSize);
@@ -295,6 +335,14 @@ function markTrail(cx, cy) {
   board[cy][cx] = 2;
   trail.push([cx, cy]);
   return false;
+}
+
+// 큰 게(홍게·청게)가 고랑(선) 칸 위에 있는지. 새끼 게는 고랑을 무시한다.
+function bigCrabOnTrail() {
+  return enemies.some(e => {
+    const cx = Math.round(e.x), cy = Math.round(e.y);
+    return isValid(cx, cy) && board[cy][cx] === 2;
+  });
 }
 
 function movePlayer(dt) {
@@ -312,6 +360,9 @@ function movePlayer(dt) {
     for (const e of enemies) {
       if (Math.hypot(nx - e.x, ny - e.y) < 0.55) { loseLife(); return; }
     }
+    for (const b of babies) {
+      if (Math.hypot(nx - b.x, ny - b.y) < BABY_HIT_DIST) { loseLife(); return; }
+    }
     if (board[cy][cx] === 2 && (cx !== Math.round(player.x) || cy !== Math.round(player.y))) {
       loseLife(); return;
     }
@@ -319,6 +370,8 @@ function movePlayer(dt) {
     player.x = nx; player.y = ny;
     // 길이와 상관없이 내 땅에 돌아오면 선을 정리 (짧은 선이 판에 남는 버그 수정)
     if (hitClaimed && trail.length > 0) {
+      // 고전 규칙: 점령 순간 큰 게가 고랑 위에 있으면 점령하지 않고 죽음
+      if (bigCrabOnTrail()) { loseLife(); return; }
       claimArea();
       break;
     }
@@ -356,7 +409,21 @@ function claimArea() {
     }
   }
   trail = [];
+  removeEnclosedBabies();
   updateTerritory();
+}
+
+// 새로 점령된 땅 안에 들어간 새끼 게는 사라지고 '+' 보너스 효과를 띄운다.
+// (현재 점수 시스템이 없어서 효과만 표시)
+function removeEnclosedBabies() {
+  babies = babies.filter(b => {
+    const cx = Math.round(b.x), cy = Math.round(b.y);
+    if (isValid(cx, cy) && board[cy][cx] === 1) {
+      effects.push({ x: b.x, y: b.y, t: 0, text: '+' });
+      return false;
+    }
+    return true;
+  });
 }
 
 function updateEnemies(dt) {
@@ -374,6 +441,53 @@ function updateEnemies(dt) {
     }
     if (isValid(cx, cy) && board[cy][cx] === 2) loseLife();
   });
+  spawnBabies();
+  updateBabies(dt);
+}
+
+// 3단계부터: 홍게(암)와 청게(수)가 만나면 그 자리에 새끼 게 2마리
+function spawnBabies() {
+  if (stage < BABY_STAGE) return;
+  for (let i = 0; i < enemies.length; i++) {
+    for (let j = i + 1; j < enemies.length; j++) {
+      const a = enemies[i], b = enemies[j];
+      if (a.type === b.type) continue;                   // 홍게-청게 쌍만
+      if (Math.hypot(a.x - b.x, a.y - b.y) >= CRAB_MEET_DIST) continue;
+      const key = i + '-' + j;
+      if (pairCooldown[key] !== undefined && playTime < pairCooldown[key]) continue;
+      const room = BABY_MAX - babies.length;
+      if (room <= 0) continue;                           // 최대 수 초과 금지
+      const colors = BABY_COLORS.slice().sort(() => Math.random() - 0.5);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      for (let k = 0; k < Math.min(2, room); k++) {
+        const ang = Math.random() * Math.PI * 2;
+        const sp = 1.4 + Math.random() * 0.6;
+        babies.push({ x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+          type: 'baby', color: colors[k], scale: 0.7, legSpeed: 14, legPhase: Math.random() * 6 });
+      }
+      pairCooldown[key] = playTime + BABY_COOLDOWN;
+    }
+  }
+}
+
+// 새끼 게: 큰 게보다 조금 빠르고 방향이 자주 흔들림. 고랑은 무시, 내 땅·테두리에서 튕김.
+function updateBabies(dt) {
+  babies.forEach(e => {
+    const turn = (Math.random() - 0.5) * 3 * dt;       // 불규칙한 방향 변화
+    const c = Math.cos(turn), s2 = Math.sin(turn);
+    const vx = e.vx * c - e.vy * s2, vy = e.vx * s2 + e.vy * c;
+    e.vx = vx; e.vy = vy;
+    e.x += e.vx * dt * 1.4;
+    e.y += e.vy * dt * 1.4;
+    e.legPhase += dt * 6;
+    if (e.x < 1.2 || e.x > GRID_W-2.2) { e.vx *= -1; e.x = Math.min(Math.max(e.x, 1.2), GRID_W-2.2); }
+    if (e.y < 1.2 || e.y > GRID_H-2.2) { e.vy *= -1; e.y = Math.min(Math.max(e.y, 1.2), GRID_H-2.2); }
+    const cx = Math.round(e.x), cy = Math.round(e.y);
+    if (isValid(cx, cy) && board[cy][cx] === 1) {
+      e.vx *= -1; e.vy *= -1;
+      e.x += e.vx * 0.4; e.y += e.vy * 0.4;
+    }
+  });
 }
 
 // 조이스틱을 놓고 서 있을 때도 적과 몸이 닿으면 목숨 감소
@@ -381,6 +495,9 @@ function checkPlayerHit() {
   if (!gameRunning || paused) return false;
   for (const e of enemies) {
     if (Math.hypot(player.x - e.x, player.y - e.y) < 0.55) { loseLife(); return true; }
+  }
+  for (const b of babies) {
+    if (Math.hypot(player.x - b.x, player.y - b.y) < BABY_HIT_DIST) { loseLife(); return true; }
   }
   return false;
 }
@@ -398,7 +515,8 @@ function win() { gameOver(true); }
 function gameOver(won) {
   gameRunning = false;
   document.getElementById('end-title').textContent = won ? '클리어!' : '게임 오버';
-  document.getElementById('end-msg').textContent = `영토 점령률: ${claimedPct}%`;
+  document.getElementById('end-msg').textContent = `${stage}단계 영토 점령률: ${claimedPct}%`;
+  document.getElementById('next-stage-btn').style.display = won ? 'block' : 'none';
   document.getElementById('gameover-overlay').classList.add('active');
 }
 
@@ -407,7 +525,10 @@ function gameLoop(ts) {
   const dt = Math.min(0.05, (ts - lastTime) / 1000);
   lastTime = ts;
   animTime += dt;
+  effects.forEach(f => { f.t += dt; });
+  effects = effects.filter(f => f.t < 1.0);
   if (gameRunning && !paused) {
+    playTime += dt;
     movePlayer(dt);
     updateEnemies(dt);
     checkPlayerHit();
@@ -465,6 +586,7 @@ function showScreen(id) {
 }
 document.getElementById('start-btn').onclick = () => {
   lives = 3; document.getElementById('lives').textContent = 3;
+  stage = 1;
   initBoard();
   gameRunning = true; paused = false;
   document.getElementById('pause-overlay').classList.remove('active');
@@ -494,6 +616,13 @@ document.getElementById('resume-btn').onclick = () => {
 document.getElementById('restart-btn').onclick = () => {
   document.getElementById('pause-overlay').classList.remove('active');
   document.getElementById('start-btn').click();
+};
+// 클리어 후 다음 단계: 목숨은 그대로, 판만 새로
+document.getElementById('next-stage-btn').onclick = () => {
+  stage++;
+  initBoard();
+  gameRunning = true; paused = false;
+  document.getElementById('gameover-overlay').classList.remove('active');
 };
 document.getElementById('retry-btn').onclick = () => document.getElementById('start-btn').click();
 document.getElementById('to-start-btn').onclick = () => {

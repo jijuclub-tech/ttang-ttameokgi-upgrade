@@ -286,12 +286,60 @@ function drawDirtCell(px, py, size, cx, cy) {
   }
 }
 
-function drawFurrow(px, py, size) {
-  ctx.fillStyle = '#5a3a1a';
-  ctx.fillRect(px + size*0.2, py + size*0.35, size*0.6, size*0.3);
-  ctx.strokeStyle = '#3a220a';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(px + size*0.15, py + size*0.3, size*0.7, size*0.4);
+// 고랑: 칸 전체를 칠하지 않고, 농부가 지나간 칸 중심을 잇는 가는 고랑(칸 폭의 약 35%)으로 그림.
+// 그림만 바뀜. 판정은 여전히 고랑 칸(board === 2) 전체 기준.
+const FURROW_WIDTH = 0.35;
+function furrowPath(points) {
+  ctx.beginPath();
+  points.forEach(([x, y], i) => {
+    const px = (x + 0.5) * cellSize, py = (y + 0.5) * cellSize;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+}
+function drawFurrows() {
+  if (!trail.length) return;
+  // 시작점: 고랑이 시작된 내 땅 칸(상하좌우 우선)에서부터 잇고, 끝은 농부 위치까지
+  const [sx, sy] = trail[0];
+  let start = null;
+  for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+    if (isValid(sx + dx, sy + dy) && board[sy + dy][sx + dx] === 1) { start = [sx + dx * 0.5, sy + dy * 0.5]; break; }
+  }
+  const pts = [];
+  if (start) pts.push(start);
+  // 이어지지 않는 칸(대각선보다 멀리 떨어진 칸)은 새 선으로 나눔
+  const segments = [pts];
+  trail.forEach(([x, y], i) => {
+    const prev = i > 0 ? trail[i - 1] : null;
+    if (prev && (Math.abs(prev[0] - x) > 1 || Math.abs(prev[1] - y) > 1)) segments.push([]);
+    segments[segments.length - 1].push([x, y]);
+  });
+  const last = trail[trail.length - 1];
+  if (Math.abs(player.x - last[0]) <= 1 && Math.abs(player.y - last[1]) <= 1) {
+    segments[segments.length - 1].push([player.x, player.y]);
+  }
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const w = cellSize * FURROW_WIDTH;
+  const layers = [
+    [w + 3, '#c89a5a'],        // 흙이 쌓인 가장자리(밝은 둑)
+    [w, '#5a3a1a'],            // 고랑
+    [w * 0.4, '#3a220a'],      // 고랑 바닥(어두운 골)
+  ];
+  for (const [lw, color] of layers) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = color;
+    for (const seg of segments) {
+      if (seg.length === 1) {
+        const [x, y] = seg[0];
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc((x + 0.5) * cellSize, (y + 0.5) * cellSize, lw / 2, 0, Math.PI * 2); ctx.fill();
+      } else if (seg.length > 1) {
+        furrowPath(seg); ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 // 플레이어 그리기 함수 표. (px, py)는 화면 픽셀 위치, size는 그림 크기(px).
@@ -401,13 +449,13 @@ function draw() {
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const px = x * cellSize, py = y * cellSize;
-      if (board[y][x] === 0) {
+      // 고랑 칸 바닥은 아직 흙(점령 전)으로 그리고, 고랑 선은 아래 drawFurrows()에서 가늘게
+      if (board[y][x] === 0 || board[y][x] === 2) {
         drawDirtCell(px, py, cellSize, x, y);
-      } else if (board[y][x] === 2) {
-        drawFurrow(px, py, cellSize);
       }
     }
   }
+  drawFurrows();
   ctx.restore();
 
   enemies.forEach(e => drawCrab(e, cellSize));

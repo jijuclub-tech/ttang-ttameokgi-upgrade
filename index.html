@@ -261,7 +261,8 @@ function drawCrab(e, size) {
 }
 
 function draw() {
-  if (!ctx) return;
+  // 시작 화면에서는 board가 비어 있어 첫 프레임에서 오류가 나고 requestAnimationFrame 루프가 멈췄음
+  if (!ctx || !board.length) return;
   const w = canvas.width / devicePixelRatio;
   const h = canvas.height / devicePixelRatio;
   ctx.clearRect(0, 0, w, h);

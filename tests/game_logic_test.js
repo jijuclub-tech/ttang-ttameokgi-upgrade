@@ -16,9 +16,9 @@ globalThis.G = {
   get playTime() { return playTime; }, set playTime(v) { playTime = v; },
   get effects() { return effects; }, BABY_COLORS,
   gameOver, startGame, nextStage, continueGame, cameraTarget, snapCamera, updateCamera,
-  get feeTotal() { return feeTotal; }, get continueRemaining() { return continueRemaining; },
+  get feeTenths() { return feeTenths; }, chargeFee, formatFee, get continueRemaining() { return continueRemaining; },
   get cam() { return cam; }, setView(w, h) { viewW = w; viewH = h; },
-  GAME_FEE, CONTINUE_FEE, CONTINUE_SECONDS,
+  GAME_FEE, STAGE_FEE, CONTINUE_FEE, CONTINUE_SECONDS,
   PLAYER_HIT_RADIUS, BIG_CRAB_HIT_RADIUS, BABY_HIT_RADIUS, BIG_CRAB_HIT_DIST, BABY_HIT_DIST, CRAB_MEET_DIST,
   CRAB_DRAW_SCALE, PLAYER_DRAW_SCALE, BABY_SCALE, crabTouchesTrail,
   get board() { return board; }, get trail() { return trail; }, get lives() { return lives; },
@@ -218,12 +218,12 @@ fresh(3); G.enemies = [still(20, 25, 'red'), still(15, 30, 'blue')];
 // --- 요금 / 이어서 하기 ---
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 G.startGame();
-check('fee 새 판 시작 요금 1원', near(G.feeTotal, 1) && els['fee'].textContent === '1원', els['fee'].textContent);
+check('fee 새 판 시작 요금 0.1p', G.feeTenths === 1 && els['fee'].textContent === '0.1p', els['fee'].textContent);
 check('continue 진행 중에는 이어서 하기 버튼 없음', els['continue-btn'].style.display === 'none');
 G.gameOver(true);
 check('continue 클리어 시 이어서 하기 버튼 없음, 다음 단계 버튼 있음', els['continue-btn'].style.display === 'none' && els['next-stage-btn'].style.display === 'block');
 G.nextStage();
-check('fee 다음 단계는 추가 요금 없음', near(G.feeTotal, 1) && els['fee'].textContent === '1원' && G.stage === 2, els['fee'].textContent);
+check('fee 다음 단계는 추가 요금 없음', G.feeTenths === 1 && els['fee'].textContent === '0.1p' && G.stage === 2, els['fee'].textContent);
 // 게임 오버 → 버튼 + 30초 카운트다운
 G.nextStage(); // 3단계
 G.enemies = [still(20, 25, 'red'), still(15, 30, 'blue')];
@@ -236,17 +236,17 @@ G.checkPlayerHit; // noop reference
 G.player.x = 15; G.player.y = 30;   // 청게와 닿음 → 마지막 목숨
 G.gameLoop(10000); G.gameLoop(10016);
 check('continue 목숨 0 → 게임 오버 + 이어서 하기 버튼', G.lives === 0 && els['continue-btn'].style.display === 'block' && els['next-stage-btn'].style.display === 'none', 'lives=' + G.lives);
-check('continue 버튼에 +0.1원과 30초 표시', els['continue-btn'].textContent === '이어서 하기 (+0.1원) 30초', els['continue-btn'].textContent);
+check('continue 버튼에 +0.1p와 30초 표시', els['continue-btn'].textContent === '이어서 하기 (+0.1p) 30초', els['continue-btn'].textContent);
 G.gameLoop(10016 + 10000);
 check('continue 10초 뒤 20초 남음', Math.ceil(G.continueRemaining) === 20 && els['continue-btn'].textContent.endsWith('20초'), els['continue-btn'].textContent);
 // 이어서 하기 누름
 const babiesBefore = G.babies.length;
 check('continue 이어서 하기 성공', G.continueGame() === true);
-check('continue 요금 1.1원', near(G.feeTotal, 1.1) && els['fee'].textContent === '1.1원', els['fee'].textContent);
+check('continue 요금 0.2p', G.feeTenths === 2 && els['fee'].textContent === '0.2p', els['fee'].textContent);
 check('continue 같은 단계, 목숨 3, 점령한 땅 유지', G.stage === 3 && G.lives === 3 && countClaimed() === before, 'stage=' + G.stage + ' claimed=' + countClaimed() + '/' + before);
 check('continue 고랑 삭제, 안전한 시작 위치, 새끼 게 유지', countTrail() === 0 && G.trail.length === 0 && G.player.x === 0 && G.player.y === 18 && G.babies.length === babiesBefore);
 check('continue 버튼 숨김', els['continue-btn'].style.display === 'none');
-check('continue 다시 누를 수 없음(중복 청구 방지)', G.continueGame() === false && near(G.feeTotal, 1.1));
+check('continue 다시 누를 수 없음(중복 청구 방지)', G.continueGame() === false && G.feeTenths === 2);
 // 30초 만료
 G.lives = 1; G.player.x = 15; G.player.y = 30;
 G.gameLoop(30000); G.gameLoop(30016);
@@ -255,10 +255,10 @@ G.gameLoop(30016 + 29000);
 check('continue 29초 뒤 아직 있음', els['continue-btn'].style.display === 'block', els['continue-btn'].textContent);
 G.gameLoop(30016 + 30100);
 check('continue 30초 지나면 버튼 사라짐', els['continue-btn'].style.display === 'none' && G.continueRemaining === 0);
-check('continue 만료 뒤에는 이어서 하기 불가, 요금 그대로', G.continueGame() === false && near(G.feeTotal, 1.1));
-// 새 판은 요금 1원부터 다시
+check('continue 만료 뒤에는 이어서 하기 불가, 요금 그대로', G.continueGame() === false && G.feeTenths === 2);
+// 새 판은 요금 0.1p부터 다시
 G.startGame();
-check('fee 새 판 시작 시 1원으로 초기화', near(G.feeTotal, 1) && G.stage === 1);
+check('fee 새 판 시작 시 0.1p로 초기화', G.feeTenths === 1 && els['fee'].textContent === '0.1p' && G.stage === 1);
 
 // --- 카메라 ---
 {
@@ -282,7 +282,7 @@ check('fee 새 판 시작 시 1원으로 초기화', near(G.feeTotal, 1) && G.st
 // --- 충돌 반지름 (그림 크기에서 계산) ---
 console.log(`      hit: player=${G.PLAYER_HIT_RADIUS.toFixed(3)} bigCrab=${G.BIG_CRAB_HIT_RADIUS.toFixed(3)} baby=${G.BABY_HIT_RADIUS.toFixed(3)} bigDist=${G.BIG_CRAB_HIT_DIST.toFixed(3)} babyDist=${G.BABY_HIT_DIST.toFixed(3)} meet=${G.CRAB_MEET_DIST.toFixed(3)}`);
 {
-  // 그림 윤곽(칸 단위): 큰 게 몸통 타원 0.32x0.22 * 1.4, 농부 머리 0.18 * 1.6
+  // 그림 윤곽(칸 단위): 큰 게 몸통 ellipse 0.32x0.22 * 1.4, 농부 머리 0.18 * 1.6
   const bigVis = 0.32 * G.CRAB_DRAW_SCALE, bigVisMin = 0.22 * G.CRAB_DRAW_SCALE;
   check('hit 큰 게 반지름은 몸통 윤곽 안쪽(짧은 반지름~긴 반지름 사이)', G.BIG_CRAB_HIT_RADIUS > bigVisMin && G.BIG_CRAB_HIT_RADIUS < bigVis);
   check('hit 새끼 게 반지름 = 큰 게 x 새끼 크기', Math.abs(G.BABY_HIT_RADIUS - G.BIG_CRAB_HIT_RADIUS * G.BABY_SCALE) < 1e-9);
@@ -331,6 +331,19 @@ fresh(3); G.enemies = [still(10, 10, 'red'), still(10.71, 10, 'blue')]; G.update
 check('meet 몸통이 닿는 거리(0.71)에서 새끼 탄생', G.babies.length === 2, 'n=' + G.babies.length);
 fresh(3); G.enemies = [still(10, 10, 'red'), still(10.75, 10, 'blue')]; G.updateEnemies(0.016);
 check('meet 0.75에서는 안 낳음', G.babies.length === 0);
+
+// --- 요금 단위 p, 소수 오차 없음 ---
+G.startGame();
+for (let i = 0; i < 2; i++) G.chargeFee(G.CONTINUE_FEE, 'continue');
+check('fee 0.1p + 0.1p + 0.1p = 0.3p (소수 오차 없음)', els['fee'].textContent === '0.3p' && G.feeTenths === 3, els['fee'].textContent);
+for (let i = 0; i < 7; i++) G.chargeFee(G.CONTINUE_FEE, 'continue');
+check('fee 10번이면 1.0p', els['fee'].textContent === '1.0p', els['fee'].textContent);
+check('fee 표시 형식', G.formatFee(1) === '0.1p' && G.formatFee(12) === '1.2p');
+{
+  const html2 = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8').replace(/\uC77C\uC6D0 \uC624\uB77D\uC2E4/g, '');
+  check('fee index.html에 옛 화폐 단위 글자(U+C6D0) 없음 (오락실 이름 제외)', !/\uC6D0/.test(html2), (html2.match(/.{10}\uC6D0.{5}/g) || []).join(' | '));
+  check('fee 상수: 한 판 0.1p, 다음 단계 0, 이어서 하기 0.1p', G.GAME_FEE === 0.1 && G.STAGE_FEE === 0 && G.CONTINUE_FEE === 0.1);
+}
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASSED');
 process.exit(fail ? 1 : 0);

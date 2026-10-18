@@ -73,7 +73,7 @@
     <div class="subtitle">농부와 게의 땅따먹기</div>
     <button id="start-btn">게임 시작</button>
     <button id="exit-start-btn" class="magenta">나가기</button>
-    <div class="fee-signal">판당 요금: 1원 (다음 단계 무료)</div>
+    <div class="fee-signal">판당 요금: 0.1p (다음 단계 무료)</div>
     <p style="font-size:16px; text-align:center; max-width:320px; opacity:0.9;">농부가 고랑을 파며 땅을 차지합니다. 홍게와 청게를 피하세요. 점령하면 풍경이 드러납니다.</p>
   </div>
 
@@ -83,7 +83,7 @@
       <div class="status-item"><span>영토</span><strong id="territory">0%</strong></div>
       <div class="status-item"><span>목숨</span><strong id="lives">3</strong></div>
       <div class="status-item"><span>목표</span><strong id="goal">75%</strong></div>
-      <div class="status-item"><span>요금</span><strong id="fee">1원</strong></div>
+      <div class="status-item"><span>요금</span><strong id="fee">0.1p</strong></div>
     </div>
     <div id="game-container">
       <canvas id="gameCanvas"></canvas>
@@ -96,7 +96,7 @@
       <div id="gameover-overlay" class="overlay">
         <h1 id="end-title" style="font-size:32px;">게임 종료</h1>
         <p id="end-msg" style="font-size:20px;">영토 점령률: 0%</p>
-        <button id="continue-btn" style="display:none;">이어서 하기 (+0.1원)</button>
+        <button id="continue-btn" style="display:none;">이어서 하기 (+0.1p)</button>
         <button id="next-stage-btn" style="display:none;">다음 단계</button>
         <button id="retry-btn">다시 도전</button>
         <button id="to-start-btn" class="magenta">시작 화면</button>
@@ -110,7 +110,7 @@
         <button id="fullscreen-btn" style="display:none;">전체화면</button>
       </div>
     </div>
-    <div class="fee-signal">판당 1원 · 다음 단계 무료 · 이어서 하기 +0.1원</div>
+    <div class="fee-signal">판당 0.1p · 다음 단계 무료 · 이어서 하기 +0.1p</div>
   </div>
 </div>
 
@@ -146,12 +146,13 @@ let pairCooldown = {};           // 'i-j' -> 다시 낳을 수 있는 playTime
 let playTime = 0;                // 일시정지·종료 중에는 멈추는 게임 시간
 let effects = [];                // 떠오르는 '+' 효과
 
-// 요금 (일원 오락실: 한 판 1원, 다음 단계는 무료, 이어서 하기는 0.1원)
-const GAME_FEE = 1;
+// 요금 단위는 p (화면 표시도 p). 한 판 0.1p, 다음 단계 무료, 이어서 하기 +0.1p
+const GAME_FEE = 0.1;
 const STAGE_FEE = 0;
 const CONTINUE_FEE = 0.1;
 const CONTINUE_SECONDS = 30;     // 게임 오버 후 '이어서 하기' 버튼이 보이는 시간
-let feeTotal = 0;                // 이번 판에서 쓴 요금 합계 (원)
+// 소수 오차(0.30000000000000004 등)를 피하려고 내부에서는 0.1p 단위 정수로 센다
+let feeTenths = 0;               // 이번 판에서 쓴 요금 합계 (0.1p 단위)
 let continueRemaining = 0;       // 남은 이어서 하기 시간 (초), 0이면 버튼 숨김
 
 // 카메라: 판 일부만 확대해서 보여 주고 농부를 따라감
@@ -160,7 +161,7 @@ const MIN_CELL = 26, MAX_CELL = 48; // 칸 크기(px) 범위. 넓은 화면에�
 const CRAB_DRAW_SCALE = 1.4;     // 게 그림 크기 배율 (충돌 판정과 무관)
 const PLAYER_DRAW_SCALE = 1.6;   // 농부 그림 크기 배율 (충돌 판정과 무관)
 // 충돌 반지름 (칸 단위): 그림 크기에서 계산. 보이는 대로 닿으면 판정되게 하되 윤곽보다 조금 작게.
-// - 게 몸통은 타원 반지름 0.32 x 0.22 (그림 size 기준) → 평균 0.27. 집게·다리는 판정에서 뺌
+// - 게 몸통은 ellipse 반지름 0.32 x 0.22 (그림 size 기준) → 평균 0.27. 집게·다리는 판정에서 뺌
 // - 농부는 머리 반지름 0.18 (그림 size 기준)을 몸 폭으로 사용
 const HIT_FAIRNESS = 0.95;                                                   // 그림 윤곽보다 5% 작게
 const CRAB_BODY_R = 0.27;
@@ -455,7 +456,7 @@ function markTrail(cx, cy) {
 }
 
 // 큰 게(홍게·청게)가 고랑(선) 칸 위에 있는지. 새끼 게는 고랑을 무시한다.
-// 게 몸통 원이 고랑 칸(한 변 1칸 정사각형)에 닿는지. 가운데 칸만 보던 예전과 달리 옆 칸 고랑에 걸쳐도 닿음.
+// 게 몸통(동그라미 판정)이 고랑 칸(한 변 1칸 정사각형)에 닿는지. 가운데 칸만 보던 예전과 달리 옆 칸 고랑에 걸쳐도 닿음.
 function crabTouchesTrail(e, radius) {
   const r = radius === undefined ? BIG_CRAB_HIT_RADIUS : radius;
   const x0 = Math.floor(e.x - r - 0.5), x1 = Math.ceil(e.x + r + 0.5);
@@ -651,15 +652,17 @@ function gameOver(won) {
   document.getElementById('gameover-overlay').classList.add('active');
 }
 
-function formatWon(v) { return (Math.round(v * 10) / 10) + '원'; }
+function toTenths(p) { return Math.round(p * 10); }
+function formatFee(tenths) { return (tenths / 10).toFixed(1) + 'p'; }   // 1 → '0.1p', 2 → '0.2p'
 
 // 요금 청구 지점. 이 저장소에는 JijuGameShell 등 공통 요금 연동이 없어서,
 // 화면 표시 + 'jiju:fee' 이벤트만 보낸다. 운영 셸이 붙으면 여기서 연결하면 됨.
 // reason: 'start'(한 판 시작) | 'continue'(이어서 하기)
+// amount, total 단위: p (0.1p 단위로 반올림해서 정수 계산)
 function chargeFee(amount, reason) {
-  feeTotal = Math.round((feeTotal + amount) * 10) / 10;
-  document.getElementById('fee').textContent = formatWon(feeTotal);
-  const detail = { amount, reason, total: feeTotal, stage };
+  feeTenths += toTenths(amount);
+  document.getElementById('fee').textContent = formatFee(feeTenths);
+  const detail = { amount: toTenths(amount) / 10, reason, total: feeTenths / 10, totalTenths: feeTenths, unit: 'p', stage };
   if (typeof window !== 'undefined') {
     if (window.JijuGameShell && typeof window.JijuGameShell.chargeFee === 'function') {
       window.JijuGameShell.chargeFee(detail);
@@ -674,17 +677,17 @@ function updateContinueUI() {
   const btn = document.getElementById('continue-btn');
   if (continueRemaining > 0) {
     btn.style.display = 'block';
-    btn.textContent = `이어서 하기 (+${formatWon(CONTINUE_FEE)}) ${Math.ceil(continueRemaining)}초`;
+    btn.textContent = `이어서 하기 (+${formatFee(toTenths(CONTINUE_FEE))}) ${Math.ceil(continueRemaining)}초`;
   } else {
     btn.style.display = 'none';
   }
 }
 
-// 새 판 시작 (1단계, 목숨 3, 요금 1원)
+// 새 판 시작 (1단계, 목숨 3, 요금 0.1p)
 function startGame() {
   lives = 3; document.getElementById('lives').textContent = 3;
   stage = 1;
-  feeTotal = 0;
+  feeTenths = 0;
   continueRemaining = 0; updateContinueUI();
   initBoard();
   chargeFee(GAME_FEE, 'start');

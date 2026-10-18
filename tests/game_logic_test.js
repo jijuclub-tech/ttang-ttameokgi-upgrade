@@ -19,6 +19,8 @@ globalThis.G = {
   get feeTotal() { return feeTotal; }, get continueRemaining() { return continueRemaining; },
   get cam() { return cam; }, setView(w, h) { viewW = w; viewH = h; },
   GAME_FEE, CONTINUE_FEE, CONTINUE_SECONDS,
+  PLAYER_HIT_RADIUS, BIG_CRAB_HIT_RADIUS, BABY_HIT_RADIUS, BIG_CRAB_HIT_DIST, BABY_HIT_DIST, CRAB_MEET_DIST,
+  CRAB_DRAW_SCALE, PLAYER_DRAW_SCALE, BABY_SCALE, crabTouchesTrail,
   get board() { return board; }, get trail() { return trail; }, get lives() { return lives; },
   set lives(v) { lives = v; }, get player() { return player; }, get enemies() { return enemies; },
   set enemies(v) { enemies = v; }, joystick, set running(v) { gameRunning = v; }, set paused(v) { paused = v; },
@@ -276,6 +278,59 @@ check('fee 새 판 시작 시 1원으로 초기화', near(G.feeTotal, 1) && G.st
   check('camera 결국 목표에 도착', Math.abs(G.cam.x - target.x) < 0.01);
   G.setView(0, 0);
 }
+
+// --- 충돌 반지름 (그림 크기에서 계산) ---
+console.log(`      hit: player=${G.PLAYER_HIT_RADIUS.toFixed(3)} bigCrab=${G.BIG_CRAB_HIT_RADIUS.toFixed(3)} baby=${G.BABY_HIT_RADIUS.toFixed(3)} bigDist=${G.BIG_CRAB_HIT_DIST.toFixed(3)} babyDist=${G.BABY_HIT_DIST.toFixed(3)} meet=${G.CRAB_MEET_DIST.toFixed(3)}`);
+{
+  // 그림 윤곽(칸 단위): 큰 게 몸통 타원 0.32x0.22 * 1.4, 농부 머리 0.18 * 1.6
+  const bigVis = 0.32 * G.CRAB_DRAW_SCALE, bigVisMin = 0.22 * G.CRAB_DRAW_SCALE;
+  check('hit 큰 게 반지름은 몸통 윤곽 안쪽(짧은 반지름~긴 반지름 사이)', G.BIG_CRAB_HIT_RADIUS > bigVisMin && G.BIG_CRAB_HIT_RADIUS < bigVis);
+  check('hit 새끼 게 반지름 = 큰 게 x 새끼 크기', Math.abs(G.BABY_HIT_RADIUS - G.BIG_CRAB_HIT_RADIUS * G.BABY_SCALE) < 1e-9);
+  check('hit 농부 반지름은 머리 윤곽보다 조금 작음', G.PLAYER_HIT_RADIUS < 0.18 * G.PLAYER_DRAW_SCALE && G.PLAYER_HIT_RADIUS > 0.18 * G.PLAYER_DRAW_SCALE * 0.9);
+  check('hit 예전보다 판정이 커짐(큰 게 0.55, 새끼 0.4)', G.BIG_CRAB_HIT_DIST > 0.55 && G.BABY_HIT_DIST > 0.4);
+}
+// 큰 게: 예전 거리(0.55)와 새 거리(≈0.63) 사이에서 닿으면 이제 사망
+const hitAt = (enemy, babyList) => {
+  fresh(3); G.player.x = 10; G.player.y = 10; G.joystick.active = false;
+  G.enemies = enemy ? [enemy, still(20, 30, 'blue')] : [still(5, 30, 'red'), still(20, 30, 'blue')];
+  G.babies = babyList || [];
+  G.gameLoop(70000); G.gameLoop(70016);
+  return G.lives;
+};
+check('hit 큰 게 거리 0.6에서 사망(보이는 대로 닿음)', hitAt(still(10.6, 10, 'red')) === 2);
+check('hit 큰 게 거리 0.7에서는 안 닿음', hitAt(still(10.7, 10, 'red')) === 3);
+const baby = (x, y) => ({ x, y, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: G.BABY_SCALE, legPhase: 0 });
+check('hit 새끼 게 거리 0.5에서 사망', hitAt(null, [baby(10.5, 10)]) === 2);
+check('hit 새끼 게 거리 0.58에서는 안 닿음', hitAt(null, [baby(10.58, 10)]) === 3);
+// 움직이는 중(movePlayer)에도 같은 거리
+fresh(3); G.player.x = 10; G.player.y = 10;
+G.enemies = [still(11.0, 10, 'red'), still(20, 30, 'blue')];
+G.joystick.active = true; G.joystick.nx = 1; G.joystick.ny = 0; G.movePlayer(0.4 / 5.2);   // 0.4칸 이동(1단계) → 거리 0.6
+check('hit 이동 중 큰 게와 0.6 이내면 사망', G.lives === 2, 'lives=' + G.lives);
+// 큰 게 몸통이 옆 칸 고랑에 걸쳐도 사망
+fresh(); G.board[10][5] = 2; G.trail.push([5, 10]);
+G.enemies = [still(5, 10.8, 'red'), still(20, 30, 'blue')];      // 중심은 (5,11) 칸, 고랑 칸 가장자리까지 0.3
+check('trail 큰 게 몸통이 옆 칸 고랑에 걸침 → 닿음', G.crabTouchesTrail(G.enemies[0]) === true);
+G.updateEnemies(0.016);
+check('trail 걸친 상태에서 목숨 감소', G.lives === 2, 'lives=' + G.lives);
+fresh(); G.board[10][5] = 2; G.trail.push([5, 10]);
+G.enemies = [still(5, 11, 'red'), still(20, 30, 'blue')];        // 가장자리까지 0.5 > 0.36
+G.updateEnemies(0.016);
+check('trail 한 칸 떨어지면 안 닿음', G.lives === 3 && countTrail() === 1, 'lives=' + G.lives);
+fresh(); G.board[10][5] = 2; G.trail.push([5, 10]);
+G.enemies = [still(5.85, 10.85, 'red'), still(20, 30, 'blue')];  // 대각선 모서리까지 √(0.35²+0.35²)=0.49
+G.updateEnemies(0.016);
+check('trail 대각선 모서리 근처(0.49)는 안 닿음', G.lives === 3);
+// 새끼 게는 고랑에 걸쳐도 여전히 무해
+fresh(3); G.board[10][5] = 2; G.trail.push([5, 10]); G.player.x = 9; G.player.y = 10;
+G.enemies = [still(5, 30, 'red'), still(20, 30, 'blue')]; G.babies = [baby(5, 10.6)];
+G.updateEnemies(0.016);
+check('trail 새끼 게는 고랑에 걸쳐도 무해', G.lives === 3 && countTrail() === 1);
+// 홍게·청게 만남 거리
+fresh(3); G.enemies = [still(10, 10, 'red'), still(10.71, 10, 'blue')]; G.updateEnemies(0.016);
+check('meet 몸통이 닿는 거리(0.71)에서 새끼 탄생', G.babies.length === 2, 'n=' + G.babies.length);
+fresh(3); G.enemies = [still(10, 10, 'red'), still(10.75, 10, 'blue')]; G.updateEnemies(0.016);
+check('meet 0.75에서는 안 낳음', G.babies.length === 0);
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASSED');
 process.exit(fail ? 1 : 0);

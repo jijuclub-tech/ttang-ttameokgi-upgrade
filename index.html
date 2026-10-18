@@ -139,8 +139,7 @@ let stage = 1;
 const BABY_STAGE = 3;
 const BABY_MAX = 8;              // 동시에 살아 있는 새끼 게 최대 수
 const BABY_COOLDOWN = 10;        // 같은 홍게·청게 쌍이 다시 낳기까지 (초)
-const CRAB_MEET_DIST = 0.7;      // 홍게와 청게가 만났다고 보는 거리
-const BABY_HIT_DIST = 0.4;       // 새끼 게와 농부 몸 충돌 거리 (큰 게 0.55)
+const BABY_SCALE = 0.7;          // 새끼 게 크기 (큰 게 대비)
 const BABY_COLORS = ['#facc15', '#22c55e', '#a855f7', '#f97316']; // 노랑·초록·보라·주황
 let babies = [];
 let pairCooldown = {};           // 'i-j' -> 다시 낳을 수 있는 playTime
@@ -160,6 +159,17 @@ const VIEW_COLS = 10;            // 휴대폰 세로 화면에서 가로로 보�
 const MIN_CELL = 26, MAX_CELL = 48; // 칸 크기(px) 범위. 넓은 화면에서 너무 커지지 않게
 const CRAB_DRAW_SCALE = 1.4;     // 게 그림 크기 배율 (충돌 판정과 무관)
 const PLAYER_DRAW_SCALE = 1.6;   // 농부 그림 크기 배율 (충돌 판정과 무관)
+// 충돌 반지름 (칸 단위): 그림 크기에서 계산. 보이는 대로 닿으면 판정되게 하되 윤곽보다 조금 작게.
+// - 게 몸통은 타원 반지름 0.32 x 0.22 (그림 size 기준) → 평균 0.27. 집게·다리는 판정에서 뺌
+// - 농부는 머리 반지름 0.18 (그림 size 기준)을 몸 폭으로 사용
+const HIT_FAIRNESS = 0.95;                                                   // 그림 윤곽보다 5% 작게
+const CRAB_BODY_R = 0.27;
+const PLAYER_HIT_RADIUS = 0.18 * PLAYER_DRAW_SCALE * HIT_FAIRNESS;            // ≈ 0.27
+const BIG_CRAB_HIT_RADIUS = CRAB_BODY_R * CRAB_DRAW_SCALE * HIT_FAIRNESS;     // ≈ 0.36
+const BABY_HIT_RADIUS = CRAB_BODY_R * CRAB_DRAW_SCALE * BABY_SCALE * HIT_FAIRNESS; // ≈ 0.25
+const BIG_CRAB_HIT_DIST = PLAYER_HIT_RADIUS + BIG_CRAB_HIT_RADIUS;            // ≈ 0.63 (예전 0.55)
+const BABY_HIT_DIST = PLAYER_HIT_RADIUS + BABY_HIT_RADIUS;                    // ≈ 0.53 (예전 0.4)
+const CRAB_MEET_DIST = BIG_CRAB_HIT_RADIUS * 2;                               // ≈ 0.72 홍게·청게 몸통이 닿는 거리 (예전 0.7)
 let cam = { x: 0, y: 0 };        // 화면 왼쪽 위가 가리키는 판 좌표 (칸)
 let viewW = 0, viewH = 0;        // 화면에 보이는 칸 수
 let minimap, mctx;
@@ -445,11 +455,22 @@ function markTrail(cx, cy) {
 }
 
 // 큰 게(홍게·청게)가 고랑(선) 칸 위에 있는지. 새끼 게는 고랑을 무시한다.
+// 게 몸통 원이 고랑 칸(한 변 1칸 정사각형)에 닿는지. 가운데 칸만 보던 예전과 달리 옆 칸 고랑에 걸쳐도 닿음.
+function crabTouchesTrail(e, radius) {
+  const r = radius === undefined ? BIG_CRAB_HIT_RADIUS : radius;
+  const x0 = Math.floor(e.x - r - 0.5), x1 = Math.ceil(e.x + r + 0.5);
+  const y0 = Math.floor(e.y - r - 0.5), y1 = Math.ceil(e.y + r + 0.5);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (!isValid(x, y) || board[y][x] !== 2) continue;
+      const dx = Math.max(Math.abs(e.x - x) - 0.5, 0), dy = Math.max(Math.abs(e.y - y) - 0.5, 0);
+      if (dx * dx + dy * dy < r * r) return true;
+    }
+  }
+  return false;
+}
 function bigCrabOnTrail() {
-  return enemies.some(e => {
-    const cx = Math.round(e.x), cy = Math.round(e.y);
-    return isValid(cx, cy) && board[cy][cx] === 2;
-  });
+  return enemies.some(e => crabTouchesTrail(e));
 }
 
 function movePlayer(dt) {
@@ -465,7 +486,7 @@ function movePlayer(dt) {
     const cy = Math.round(ny);
     if (!isValid(cx, cy)) continue;
     for (const e of enemies) {
-      if (Math.hypot(nx - e.x, ny - e.y) < 0.55) { loseLife(); return; }
+      if (Math.hypot(nx - e.x, ny - e.y) < BIG_CRAB_HIT_DIST) { loseLife(); return; }
     }
     for (const b of babies) {
       if (Math.hypot(nx - b.x, ny - b.y) < BABY_HIT_DIST) { loseLife(); return; }
@@ -546,7 +567,7 @@ function updateEnemies(dt) {
       e.vx *= -1; e.vy *= -1;
       e.x += e.vx * 0.4; e.y += e.vy * 0.4;
     }
-    if (isValid(cx, cy) && board[cy][cx] === 2) loseLife();
+    if (crabTouchesTrail(e)) loseLife();
   });
   spawnBabies();
   updateBabies(dt);
@@ -570,7 +591,7 @@ function spawnBabies() {
         const ang = Math.random() * Math.PI * 2;
         const sp = 1.4 + Math.random() * 0.6;
         babies.push({ x: mx, y: my, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
-          type: 'baby', color: colors[k], scale: 0.7, legSpeed: 14, legPhase: Math.random() * 6 });
+          type: 'baby', color: colors[k], scale: BABY_SCALE, legSpeed: 14, legPhase: Math.random() * 6 });
       }
       pairCooldown[key] = playTime + BABY_COOLDOWN;
     }
@@ -601,7 +622,7 @@ function updateBabies(dt) {
 function checkPlayerHit() {
   if (!gameRunning || paused) return false;
   for (const e of enemies) {
-    if (Math.hypot(player.x - e.x, player.y - e.y) < 0.55) { loseLife(); return true; }
+    if (Math.hypot(player.x - e.x, player.y - e.y) < BIG_CRAB_HIT_DIST) { loseLife(); return true; }
   }
   for (const b of babies) {
     if (Math.hypot(player.x - b.x, player.y - b.y) < BABY_HIT_DIST) { loseLife(); return true; }

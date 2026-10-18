@@ -4,8 +4,9 @@ const fs = require('fs'), vm = require('vm'), path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
 const logic = script.slice(0, script.indexOf("const joyEl"));
-const el = () => ({ textContent: '', style: {}, classList: { add() {}, remove() {} } });
-const ctx = { document: { getElementById: el }, console, Math };
+const els = {};
+const el = () => { const cls = new Set(); return { textContent: '', style: {}, classList: { add(c) { cls.add(c); }, remove(c) { cls.delete(c); }, contains(c) { return cls.has(c); } } }; };
+const ctx = { document: { getElementById: id => (els[id] = els[id] || el()) }, console, Math };
 vm.createContext(ctx);
 vm.runInContext(logic + `
 globalThis.G = {
@@ -14,6 +15,10 @@ globalThis.G = {
   get babies() { return babies; }, set babies(v) { babies = v; },
   get playTime() { return playTime; }, set playTime(v) { playTime = v; },
   get effects() { return effects; }, BABY_COLORS,
+  gameOver, startGame, nextStage, continueGame, cameraTarget, snapCamera, updateCamera,
+  get feeTotal() { return feeTotal; }, get continueRemaining() { return continueRemaining; },
+  get cam() { return cam; }, setView(w, h) { viewW = w; viewH = h; },
+  GAME_FEE, CONTINUE_FEE, CONTINUE_SECONDS,
   get board() { return board; }, get trail() { return trail; }, get lives() { return lives; },
   set lives(v) { lives = v; }, get player() { return player; }, get enemies() { return enemies; },
   set enemies(v) { enemies = v; }, joystick, set running(v) { gameRunning = v; }, set paused(v) { paused = v; },
@@ -206,6 +211,70 @@ fresh(3); G.enemies = [still(20, 25, 'red'), still(15, 30, 'blue')];
   G.babies = [{ x: 3, y: 18, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.55, legPhase: 0 }];
   step(0, 1); for (let i = 0; i < 7; i++) step(-1, 0);
   check('babies 점령 순간 새끼가 고랑 위 → 죽지 않고 점령, 새끼는 사라짐', G.lives === 3 && countTrail() === 0 && G.babies.length === 0 && countClaimed() > borderCells, 'lives=' + G.lives + ', babies=' + G.babies.length);
+}
+
+// --- 요금 / 이어서 하기 ---
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+G.startGame();
+check('fee 새 판 시작 요금 1원', near(G.feeTotal, 1) && els['fee'].textContent === '1원', els['fee'].textContent);
+check('continue 진행 중에는 이어서 하기 버튼 없음', els['continue-btn'].style.display === 'none');
+G.gameOver(true);
+check('continue 클리어 시 이어서 하기 버튼 없음, 다음 단계 버튼 있음', els['continue-btn'].style.display === 'none' && els['next-stage-btn'].style.display === 'block');
+G.nextStage();
+check('fee 다음 단계는 추가 요금 없음', near(G.feeTotal, 1) && els['fee'].textContent === '1원' && G.stage === 2, els['fee'].textContent);
+// 게임 오버 → 버튼 + 30초 카운트다운
+G.nextStage(); // 3단계
+G.enemies = [still(20, 25, 'red'), still(15, 30, 'blue')];
+for (let y = 1; y < 8; y++) for (let x = 1; x < 8; x++) G.board[y][x] = 1;       // 점령한 땅
+G.babies = [{ x: 14, y: 14, vx: 0, vy: 0, type: 'baby', color: '#facc15', scale: 0.7, legPhase: 0 }];
+G.board[18][3] = 2; G.trail.push([3, 18]);
+G.lives = 1;
+const before = countClaimed();
+G.checkPlayerHit; // noop reference
+G.player.x = 15; G.player.y = 30;   // 청게와 닿음 → 마지막 목숨
+G.gameLoop(10000); G.gameLoop(10016);
+check('continue 목숨 0 → 게임 오버 + 이어서 하기 버튼', G.lives === 0 && els['continue-btn'].style.display === 'block' && els['next-stage-btn'].style.display === 'none', 'lives=' + G.lives);
+check('continue 버튼에 +0.1원과 30초 표시', els['continue-btn'].textContent === '이어서 하기 (+0.1원) 30초', els['continue-btn'].textContent);
+G.gameLoop(10016 + 10000);
+check('continue 10초 뒤 20초 남음', Math.ceil(G.continueRemaining) === 20 && els['continue-btn'].textContent.endsWith('20초'), els['continue-btn'].textContent);
+// 이어서 하기 누름
+const babiesBefore = G.babies.length;
+check('continue 이어서 하기 성공', G.continueGame() === true);
+check('continue 요금 1.1원', near(G.feeTotal, 1.1) && els['fee'].textContent === '1.1원', els['fee'].textContent);
+check('continue 같은 단계, 목숨 3, 점령한 땅 유지', G.stage === 3 && G.lives === 3 && countClaimed() === before, 'stage=' + G.stage + ' claimed=' + countClaimed() + '/' + before);
+check('continue 고랑 삭제, 안전한 시작 위치, 새끼 게 유지', countTrail() === 0 && G.trail.length === 0 && G.player.x === 0 && G.player.y === 18 && G.babies.length === babiesBefore);
+check('continue 버튼 숨김', els['continue-btn'].style.display === 'none');
+check('continue 다시 누를 수 없음(중복 청구 방지)', G.continueGame() === false && near(G.feeTotal, 1.1));
+// 30초 만료
+G.lives = 1; G.player.x = 15; G.player.y = 30;
+G.gameLoop(30000); G.gameLoop(30016);
+check('continue 두 번째 게임 오버에도 버튼', els['continue-btn'].style.display === 'block');
+G.gameLoop(30016 + 29000);
+check('continue 29초 뒤 아직 있음', els['continue-btn'].style.display === 'block', els['continue-btn'].textContent);
+G.gameLoop(30016 + 30100);
+check('continue 30초 지나면 버튼 사라짐', els['continue-btn'].style.display === 'none' && G.continueRemaining === 0);
+check('continue 만료 뒤에는 이어서 하기 불가, 요금 그대로', G.continueGame() === false && near(G.feeTotal, 1.1));
+// 새 판은 요금 1원부터 다시
+G.startGame();
+check('fee 새 판 시작 시 1원으로 초기화', near(G.feeTotal, 1) && G.stage === 1);
+
+// --- 카메라 ---
+{
+  const t1 = G.cameraTarget(0, 18, 10, 15);
+  check('camera 왼쪽 끝에서 0으로 고정', t1.x === 0, JSON.stringify(t1));
+  const t2 = G.cameraTarget(27, 35, 10, 15);
+  check('camera 오른쪽 아래 끝에서 판 밖으로 안 나감', near(t2.x, 28 - 10) && near(t2.y, 36 - 15), JSON.stringify(t2));
+  const t3 = G.cameraTarget(14, 18, 10, 15);
+  check('camera 가운데에서는 농부가 화면 중앙', near(t3.x + 5, 14.5) && near(t3.y + 7.5, 18.5), JSON.stringify(t3));
+  const t4 = G.cameraTarget(5, 5, 40, 50);
+  check('camera 화면이 판보다 크면 가운데 정렬', near(t4.x, -6) && near(t4.y, -7), JSON.stringify(t4));
+  fresh(); G.setView(10, 15); G.player.x = 14; G.player.y = 18; G.snapCamera();
+  G.player.x = 20; G.updateCamera(0.05);
+  const target = G.cameraTarget(20, 18, 10, 15);
+  check('camera 부드럽게 따라감(한 번에 점프하지 않음)', G.cam.x > 9.5 && G.cam.x < target.x, 'cam.x=' + G.cam.x.toFixed(2) + ' target=' + target.x);
+  for (let i = 0; i < 100; i++) G.updateCamera(0.05);
+  check('camera 결국 목표에 도착', Math.abs(G.cam.x - target.x) < 0.01);
+  G.setView(0, 0);
 }
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASSED');

@@ -49,12 +49,20 @@
     position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
     box-shadow: 0 0 15px #00f0ff; pointer-events: none;
   }
-  .side-buttons { display: flex; flex-direction: column; gap: 12px; }
-  .side-buttons button { min-width: 120px; min-height: 52px; font-size: 18px; padding: 12px; }
+  .side-buttons { display: flex; flex-direction: column; gap: 8px; }
+  .side-buttons button { min-width: 120px; min-height: 44px; font-size: 18px; padding: 8px 12px; }
   .overlay { position: absolute; inset: 0; background: rgba(0,0,10,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 20; }
   .overlay.active { display: flex; }
   .fee-signal { font-size: 16px; color: #ffd700; text-align: center; }
-  #fullscreen-btn { position: absolute; top: 8px; right: 8px; z-index: 10; min-width: auto; padding: 8px 12px; font-size: 16px; }
+  /* 전체화면 버튼은 상태바와 겹치지 않도록 오른쪽 아래 버튼 묶음 안에 둔다 */
+  .side-buttons #fullscreen-btn { min-height: 36px; font-size: 15px; padding: 4px 12px; }
+  /* 미니맵: 게임 화면 오른쪽 위 (상태바 아래, 게임 영역 안) */
+  #minimap {
+    position: absolute; top: 8px; right: 8px; width: 70px; height: 90px; flex: none;
+    border: 2px solid rgba(255,255,255,0.8); border-radius: 4px; background: rgba(0,0,0,0.45);
+    z-index: 5; pointer-events: none;
+  }
+  #continue-btn { border-color: #ffd700; color: #ffd700; box-shadow: 0 0 15px rgba(255,215,0,0.6); }
 </style>
 </head>
 <body>
@@ -65,7 +73,7 @@
     <div class="subtitle">농부와 게의 땅따먹기</div>
     <button id="start-btn">게임 시작</button>
     <button id="exit-start-btn" class="magenta">나가기</button>
-    <div class="fee-signal">판당 요금: 500원</div>
+    <div class="fee-signal">판당 요금: 1원 (다음 단계 무료)</div>
     <p style="font-size:16px; text-align:center; max-width:320px; opacity:0.9;">농부가 고랑을 파며 땅을 차지합니다. 홍게와 청게를 피하세요. 점령하면 풍경이 드러납니다.</p>
   </div>
 
@@ -75,10 +83,11 @@
       <div class="status-item"><span>영토</span><strong id="territory">0%</strong></div>
       <div class="status-item"><span>목숨</span><strong id="lives">3</strong></div>
       <div class="status-item"><span>목표</span><strong id="goal">75%</strong></div>
-      <div class="status-item"><span>요금</span><strong>500원</strong></div>
+      <div class="status-item"><span>요금</span><strong id="fee">1원</strong></div>
     </div>
     <div id="game-container">
       <canvas id="gameCanvas"></canvas>
+      <canvas id="minimap"></canvas>
       <div id="pause-overlay" class="overlay">
         <h1 style="font-size:32px;">일시정지</h1>
         <button id="resume-btn">계속하기</button>
@@ -87,6 +96,7 @@
       <div id="gameover-overlay" class="overlay">
         <h1 id="end-title" style="font-size:32px;">게임 종료</h1>
         <p id="end-msg" style="font-size:20px;">영토 점령률: 0%</p>
+        <button id="continue-btn" style="display:none;">이어서 하기 (+0.1원)</button>
         <button id="next-stage-btn" style="display:none;">다음 단계</button>
         <button id="retry-btn">다시 도전</button>
         <button id="to-start-btn" class="magenta">시작 화면</button>
@@ -97,11 +107,11 @@
       <div class="side-buttons">
         <button id="pause-btn">일시정지</button>
         <button id="exit-game-btn" class="magenta">나가기</button>
+        <button id="fullscreen-btn" style="display:none;">전체화면</button>
       </div>
     </div>
-    <div class="fee-signal">판당 요금 신호 활성</div>
+    <div class="fee-signal">판당 1원 · 다음 단계 무료 · 이어서 하기 +0.1원</div>
   </div>
-  <button id="fullscreen-btn" style="display:none;">전체화면</button>
 </div>
 
 <script>
@@ -112,7 +122,8 @@ const GOAL = 75;
 const SPEED = 5.2;
 const GRID_W = 28, GRID_H = 36;
 let board = [];
-let player = { x: 0, y: 0, dir: 0 };
+// type: 그릴 캐릭터 종류. 나중에 'tractor'를 추가하면 PLAYER_SPRITES에 그리기 함수만 넣으면 됨.
+let player = { x: 0, y: 0, dir: 0, type: 'farmer', facing: 1 };
 let enemies = [];
 let lives = 3;
 let claimedPct = 0;
@@ -136,6 +147,23 @@ let pairCooldown = {};           // 'i-j' -> 다시 낳을 수 있는 playTime
 let playTime = 0;                // 일시정지·종료 중에는 멈추는 게임 시간
 let effects = [];                // 떠오르는 '+' 효과
 
+// 요금 (일원 오락실: 한 판 1원, 다음 단계는 무료, 이어서 하기는 0.1원)
+const GAME_FEE = 1;
+const STAGE_FEE = 0;
+const CONTINUE_FEE = 0.1;
+const CONTINUE_SECONDS = 30;     // 게임 오버 후 '이어서 하기' 버튼이 보이는 시간
+let feeTotal = 0;                // 이번 판에서 쓴 요금 합계 (원)
+let continueRemaining = 0;       // 남은 이어서 하기 시간 (초), 0이면 버튼 숨김
+
+// 카메라: 판 일부만 확대해서 보여 주고 농부를 따라감
+const VIEW_COLS = 10;            // 휴대폰 세로 화면에서 가로로 보이는 칸 수
+const MIN_CELL = 26, MAX_CELL = 48; // 칸 크기(px) 범위. 넓은 화면에서 너무 커지지 않게
+const CRAB_DRAW_SCALE = 1.4;     // 게 그림 크기 배율 (충돌 판정과 무관)
+const PLAYER_DRAW_SCALE = 1.6;   // 농부 그림 크기 배율 (충돌 판정과 무관)
+let cam = { x: 0, y: 0 };        // 화면 왼쪽 위가 가리키는 판 좌표 (칸)
+let viewW = 0, viewH = 0;        // 화면에 보이는 칸 수
+let minimap, mctx;
+
 function initBoard() {
   board = Array.from({length: GRID_H}, () => Array(GRID_W).fill(0));
   for (let y = 0; y < GRID_H; y++) {
@@ -154,6 +182,7 @@ function initBoard() {
   effects = [];
   playTime = 0;
   document.getElementById('stage').textContent = stage;
+  snapCamera();
   updateTerritory();
 }
 
@@ -174,7 +203,35 @@ function resizeCanvas() {
   canvas.style.width = rect.width + 'px';
   canvas.style.height = rect.height + 'px';
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  cellSize = Math.min(rect.width / GRID_W, rect.height / GRID_H);
+  // 확대 화면: 가로 VIEW_COLS칸이 보이도록 (S22 세로 약 33px/칸)
+  cellSize = Math.min(MAX_CELL, Math.max(MIN_CELL, rect.width / VIEW_COLS));
+  viewW = rect.width / cellSize;
+  viewH = rect.height / cellSize;
+  if (minimap) {
+    minimap.width = 70 * devicePixelRatio;
+    minimap.height = 90 * devicePixelRatio;
+    mctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }
+  snapCamera();
+}
+
+// 카메라 목표 위치: 플레이어를 가운데 두고 판 가장자리에서 멈춤.
+// 화면이 판보다 넓은 방향은 판을 가운데 정렬.
+function cameraTarget(px, py, vw, vh) {
+  const clampAxis = (p, v, size) => v >= size ? (size - v) / 2 : Math.min(Math.max(p + 0.5 - v / 2, 0), size - v);
+  return { x: clampAxis(px, vw, GRID_W), y: clampAxis(py, vh, GRID_H) };
+}
+function snapCamera() {
+  if (!viewW) return;
+  const t = cameraTarget(player.x, player.y, viewW, viewH);
+  cam.x = t.x; cam.y = t.y;
+}
+function updateCamera(dt) {
+  if (!viewW) return;
+  const t = cameraTarget(player.x, player.y, viewW, viewH);
+  const k = Math.min(1, dt * 6);   // 부드럽게 따라감
+  cam.x += (t.x - cam.x) * k;
+  cam.y += (t.y - cam.y) * k;
 }
 
 function drawLandscape(w, h) {
@@ -206,12 +263,15 @@ function drawLandscape(w, h) {
   }
 }
 
-function drawDirtCell(px, py, size) {
+function drawDirtCell(px, py, size, cx, cy) {
   ctx.fillStyle = '#8b5a2b';
-  ctx.fillRect(px, py, size, size);
+  ctx.fillRect(px, py, size + 0.5, size + 0.5);
   ctx.fillStyle = '#6b4423';
+  // 칸 좌표로 정해지는 흙 점 (매 프레임 Math.random을 쓰면 확대 화면에서 깜빡임)
   for (let i = 0; i < 3; i++) {
-    ctx.fillRect(px + Math.random()*size*0.6, py + Math.random()*size*0.6, 2, 2);
+    const r1 = ((cx * 73 + cy * 151 + i * 37) % 97) / 97;
+    const r2 = ((cx * 199 + cy * 61 + i * 89) % 89) / 89;
+    ctx.fillRect(px + r1*size*0.8, py + r2*size*0.8, 3, 3);
   }
 }
 
@@ -223,12 +283,21 @@ function drawFurrow(px, py, size) {
   ctx.strokeRect(px + size*0.15, py + size*0.3, size*0.7, size*0.4);
 }
 
-function drawFarmer(x, y, dir, size) {
-  const px = x * size, py = y * size;
+// 플레이어 그리기 함수 표. (px, py)는 화면 픽셀 위치, size는 그림 크기(px).
+// 트랙터 농부를 넣을 때: function drawTractor(px, py, facing, size) {...} 를 만들고
+// PLAYER_SPRITES.tractor = drawTractor; player.type = 'tractor'; 로 바꾸면 됨.
+const PLAYER_SPRITES = { farmer: drawFarmer };
+function drawPlayer() {
+  if (joystick.active && Math.abs(joystick.nx) > 0.2) player.facing = joystick.nx < 0 ? -1 : 1;
+  const sprite = PLAYER_SPRITES[player.type] || drawFarmer;
+  sprite(player.x * cellSize, player.y * cellSize, player.facing, cellSize * PLAYER_DRAW_SCALE);
+}
+
+function drawFarmer(px, py, facing, size) {
   ctx.save();
   ctx.translate(px, py);
-  const angle = Math.atan2(dir.y || 0, dir.x || 1);
-  ctx.rotate(angle);
+  // 몸을 회전시키면 왼쪽으로 갈 때 거꾸로 서므로, 똑바로 세우고 좌우만 뒤집음
+  ctx.scale(facing < 0 ? -1 : 1, 1);
   ctx.fillStyle = '#c17a4a';
   ctx.beginPath(); ctx.arc(0, -size*0.25, size*0.18, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#f5d0a0';
@@ -252,7 +321,7 @@ function drawCrab(e, cell) {
   const px = e.x * cell, py = e.y * cell;
   const color = e.color || (e.type === 'red' ? '#e63946' : '#1d4ed8');
   const scale = e.scale || 1;      // 새끼 게는 작게
-  const size = cell * scale;
+  const size = cell * scale * CRAB_DRAW_SCALE;
   const phase = animTime * (e.legSpeed || 8) + e.legPhase;
   ctx.save();
   ctx.translate(px, py);
@@ -267,7 +336,7 @@ function drawCrab(e, cell) {
   ctx.beginPath(); ctx.arc(-size*0.1, -size*0.08, size*0.025, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(size*0.1, -size*0.08, size*0.025, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(1, 2.5 * scale);
+  ctx.lineWidth = Math.max(1.5, size * 0.07);
   ctx.beginPath(); ctx.moveTo(-size*0.25, -size*0.05); ctx.lineTo(-size*0.4, -size*0.15); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(size*0.25, -size*0.05); ctx.lineTo(size*0.4, -size*0.15); ctx.stroke();
   for (let i = 0; i < 3; i++) {
@@ -303,27 +372,65 @@ function draw() {
   if (!ctx || !board.length) return;
   const w = canvas.width / devicePixelRatio;
   const h = canvas.height / devicePixelRatio;
-  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a1208';
+  ctx.fillRect(0, 0, w, h);
 
-  drawLandscape(w, h);
-
-  for (let y = 0; y < GRID_H; y++) {
-    for (let x = 0; x < GRID_W; x++) {
+  ctx.save();
+  // 카메라 좌표계: 판 왼쪽 위 모서리 = (0,0). 게·농부의 정수 좌표는 칸 중심이므로 +0.5칸 이동해서 그림
+  // (예전에는 반 칸 왼쪽 위로 어긋나게 그려졌음)
+  ctx.translate(Math.round((-cam.x) * cellSize), Math.round((-cam.y) * cellSize));
+  ctx.translate(cellSize * 0.5, cellSize * 0.5);
+  ctx.save();
+  ctx.translate(-cellSize * 0.5, -cellSize * 0.5);
+  ctx.beginPath(); ctx.rect(0, 0, GRID_W * cellSize, GRID_H * cellSize); ctx.clip();
+  drawLandscape(GRID_W * cellSize, GRID_H * cellSize);
+  // 화면에 보이는 칸만 그림
+  const x0 = Math.max(0, Math.floor(cam.x) - 1), x1 = Math.min(GRID_W - 1, Math.ceil(cam.x + viewW) + 1);
+  const y0 = Math.max(0, Math.floor(cam.y) - 1), y1 = Math.min(GRID_H - 1, Math.ceil(cam.y + viewH) + 1);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
       const px = x * cellSize, py = y * cellSize;
       if (board[y][x] === 0) {
-        drawDirtCell(px, py, cellSize);
+        drawDirtCell(px, py, cellSize, x, y);
       } else if (board[y][x] === 2) {
         drawFurrow(px, py, cellSize);
       }
     }
   }
+  ctx.restore();
 
   enemies.forEach(e => drawCrab(e, cellSize));
   babies.forEach(b => drawCrab(b, cellSize));
   drawEffects();
+  drawPlayer();
+  ctx.restore();
 
-  const dir = { x: joystick.nx || 1, y: joystick.ny || 0 };
-  drawFarmer(player.x, player.y, dir, cellSize);
+  drawMinimap();
+}
+
+// 미니맵: 판 전체(내 땅·고랑·농부·큰 게·새끼 게)와 지금 보이는 영역 사각형
+function drawMinimap() {
+  if (!mctx) return;
+  const W = 70, H = 90, sx = W / GRID_W, sy = H / GRID_H;
+  mctx.clearRect(0, 0, W, H);
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const v = board[y][x];
+      if (v === 0) continue;
+      mctx.fillStyle = v === 1 ? 'rgba(110,190,90,0.9)' : '#ffe14d';
+      mctx.fillRect(x * sx, y * sy, Math.ceil(sx), Math.ceil(sy));
+    }
+  }
+  const dot = (x, y, r, color) => {
+    mctx.fillStyle = color;
+    mctx.beginPath(); mctx.arc((x + 0.5) * sx, (y + 0.5) * sy, r, 0, Math.PI * 2); mctx.fill();
+  };
+  babies.forEach(b => dot(b.x, b.y, 1.6, b.color));
+  enemies.forEach(e => dot(e.x, e.y, 2.6, e.type === 'red' ? '#ff4d5a' : '#4d7dff'));
+  dot(player.x, player.y, 2.8, '#ffffff');
+  mctx.strokeStyle = '#ffffff';
+  mctx.lineWidth = 1;
+  mctx.strokeRect(cam.x * sx, cam.y * sy, Math.min(viewW, GRID_W) * sx, Math.min(viewH, GRID_H) * sy);
 }
 
 function isValid(x, y) { return x >= 0 && x < GRID_W && y >= 0 && y < GRID_H; }
@@ -517,13 +624,84 @@ function gameOver(won) {
   document.getElementById('end-title').textContent = won ? '클리어!' : '게임 오버';
   document.getElementById('end-msg').textContent = `${stage}단계 영토 점령률: ${claimedPct}%`;
   document.getElementById('next-stage-btn').style.display = won ? 'block' : 'none';
+  // 중간에 끝났을 때만(클리어 아님) 30초 동안 '이어서 하기'
+  continueRemaining = won ? 0 : CONTINUE_SECONDS;
+  updateContinueUI();
   document.getElementById('gameover-overlay').classList.add('active');
+}
+
+function formatWon(v) { return (Math.round(v * 10) / 10) + '원'; }
+
+// 요금 청구 지점. 이 저장소에는 JijuGameShell 등 공통 요금 연동이 없어서,
+// 화면 표시 + 'jiju:fee' 이벤트만 보낸다. 운영 셸이 붙으면 여기서 연결하면 됨.
+// reason: 'start'(한 판 시작) | 'continue'(이어서 하기)
+function chargeFee(amount, reason) {
+  feeTotal = Math.round((feeTotal + amount) * 10) / 10;
+  document.getElementById('fee').textContent = formatWon(feeTotal);
+  const detail = { amount, reason, total: feeTotal, stage };
+  if (typeof window !== 'undefined') {
+    if (window.JijuGameShell && typeof window.JijuGameShell.chargeFee === 'function') {
+      window.JijuGameShell.chargeFee(detail);
+    }
+    if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('jiju:fee', { detail }));
+    }
+  }
+}
+
+function updateContinueUI() {
+  const btn = document.getElementById('continue-btn');
+  if (continueRemaining > 0) {
+    btn.style.display = 'block';
+    btn.textContent = `이어서 하기 (+${formatWon(CONTINUE_FEE)}) ${Math.ceil(continueRemaining)}초`;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+// 새 판 시작 (1단계, 목숨 3, 요금 1원)
+function startGame() {
+  lives = 3; document.getElementById('lives').textContent = 3;
+  stage = 1;
+  feeTotal = 0;
+  continueRemaining = 0; updateContinueUI();
+  initBoard();
+  chargeFee(GAME_FEE, 'start');
+  gameRunning = true; paused = false;
+}
+
+// 클리어 후 다음 단계: 요금 없음(STAGE_FEE = 0), 목숨 그대로, 판만 새로
+function nextStage() {
+  stage++;
+  if (STAGE_FEE > 0) chargeFee(STAGE_FEE, 'stage');
+  continueRemaining = 0; updateContinueUI();
+  initBoard();
+  gameRunning = true; paused = false;
+}
+
+// 이어서 하기: 같은 단계·같은 판(점령한 땅, 게, 새끼 게 유지), 목숨 3으로 복구, 고랑 삭제, 시작 위치로
+function continueGame() {
+  if (continueRemaining <= 0) return false;
+  chargeFee(CONTINUE_FEE, 'continue');
+  continueRemaining = 0; updateContinueUI();
+  lives = 3; document.getElementById('lives').textContent = lives;
+  trail.forEach(([x, y]) => { if (board[y][x] === 2) board[y][x] = 0; });
+  trail = [];
+  player.x = 0; player.y = Math.floor(GRID_H / 2);
+  snapCamera();
+  gameRunning = true; paused = false;
+  return true;
 }
 
 function gameLoop(ts) {
   if (!lastTime) lastTime = ts;
-  const dt = Math.min(0.05, (ts - lastTime) / 1000);
+  const realDt = Math.max(0, (ts - lastTime) / 1000);   // 실제 경과 시간 (이어서 하기 카운트다운용)
+  const dt = Math.min(0.05, realDt);
   lastTime = ts;
+  if (continueRemaining > 0) {
+    continueRemaining = Math.max(0, continueRemaining - realDt);
+    updateContinueUI();
+  }
   animTime += dt;
   effects.forEach(f => { f.t += dt; });
   effects = effects.filter(f => f.t < 1.0);
@@ -533,6 +711,7 @@ function gameLoop(ts) {
     updateEnemies(dt);
     checkPlayerHit();
   }
+  updateCamera(dt);
   draw();
   requestAnimationFrame(gameLoop);
 }
@@ -585,10 +764,7 @@ function showScreen(id) {
   document.getElementById(id).classList.add('active');
 }
 document.getElementById('start-btn').onclick = () => {
-  lives = 3; document.getElementById('lives').textContent = 3;
-  stage = 1;
-  initBoard();
-  gameRunning = true; paused = false;
+  startGame();
   document.getElementById('pause-overlay').classList.remove('active');
   document.getElementById('gameover-overlay').classList.remove('active');
   showScreen('game-screen');
@@ -619,13 +795,15 @@ document.getElementById('restart-btn').onclick = () => {
 };
 // 클리어 후 다음 단계: 목숨은 그대로, 판만 새로
 document.getElementById('next-stage-btn').onclick = () => {
-  stage++;
-  initBoard();
-  gameRunning = true; paused = false;
+  nextStage();
   document.getElementById('gameover-overlay').classList.remove('active');
+};
+document.getElementById('continue-btn').onclick = () => {
+  if (continueGame()) document.getElementById('gameover-overlay').classList.remove('active');
 };
 document.getElementById('retry-btn').onclick = () => document.getElementById('start-btn').click();
 document.getElementById('to-start-btn').onclick = () => {
+  continueRemaining = 0; updateContinueUI();
   showScreen('start-screen');
   document.getElementById('fullscreen-btn').style.display = 'none';
 };
@@ -657,6 +835,8 @@ history.pushState(null, '', '');
 
 canvas = document.getElementById('gameCanvas');
 ctx = canvas.getContext('2d');
+minimap = document.getElementById('minimap');
+mctx = minimap.getContext('2d');
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
 requestAnimationFrame(gameLoop);

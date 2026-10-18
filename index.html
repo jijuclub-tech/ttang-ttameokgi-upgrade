@@ -327,10 +327,14 @@ function movePlayer(dt) {
 function claimArea() {
   const visited = Array.from({length: GRID_H}, () => Array(GRID_W).fill(false));
   const queue = [];
+  // 적이 있는 칸은 상태(빈칸/선/내 땅)와 상관없이 시작점으로 삼는다.
+  // 예전에는 빈칸일 때만 넣어서, 적이 선이나 내 땅 칸 위에 있으면 시작점이 없어 판 전체가 점령됐다.
   enemies.forEach(e => {
     const ex = Math.round(e.x), ey = Math.round(e.y);
-    if (isValid(ex, ey) && board[ey][ex] === 0) { queue.push([ex, ey]); visited[ey][ex] = true; }
+    if (isValid(ex, ey) && !visited[ey][ex]) { queue.push([ex, ey]); visited[ey][ex] = true; }
   });
+  // 시작점이 하나도 없으면 둘러싼 영역 판정을 할 수 없으므로 선만 내 땅으로 바꾼다.
+  const hasSeed = queue.length > 0;
   // 4방향 탐색: 8방향이면 대각선으로만 이어진 선의 틈으로 새어 나가 점령이 안 됨
   const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   while (queue.length) {
@@ -345,7 +349,7 @@ function claimArea() {
   }
   for (let y = 0; y < GRID_H; y++) {
     for (let x = 0; x < GRID_W; x++) {
-      if (board[y][x] === 2 || (board[y][x] === 0 && !visited[y][x])) {
+      if (board[y][x] === 2 || (hasSeed && board[y][x] === 0 && !visited[y][x])) {
         board[y][x] = 1;
       }
     }

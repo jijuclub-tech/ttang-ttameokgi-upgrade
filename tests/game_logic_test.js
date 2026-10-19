@@ -21,6 +21,12 @@ globalThis.G = {
   GAME_FEE, STAGE_FEE, CONTINUE_FEE, CONTINUE_SECONDS,
   PLAYER_HIT_RADIUS, BIG_CRAB_HIT_RADIUS, BABY_HIT_RADIUS, BIG_CRAB_HIT_DIST, BABY_HIT_DIST, CRAB_MEET_DIST,
   CRAB_DRAW_SCALE, PLAYER_DRAW_SCALE, BABY_SCALE, crabTouchesTrail,
+  get powerups() { return powerups; }, set powerups(v) { powerups = v; },
+  get tractorRemaining() { return tractorRemaining; }, get crabRespawns() { return crabRespawns; },
+  get bidguardNextAt() { return bidguardNextAt; }, set bidguardNextAt(v) { bidguardNextAt = v; },
+  updatePowerups, spawnPowerup, activateTractor, setTractor, bounceOff, furrowSegments, playerSpriteType, continueGameRef: continueGame,
+  TRACTOR_SECONDS, TRACTOR_HIT_RADIUS, POWERUP_RADIUS, MAX_LIVES, FURROW_WIDTH, BIDGUARD_FIRST_DELAY, BIDGUARD_RESPAWN, CRAB_RESPAWN_SECONDS,
+  get animTime() { return animTime; }, set animTime(v) { animTime = v; },
   get board() { return board; }, get trail() { return trail; }, get lives() { return lives; },
   set lives(v) { lives = v; }, get player() { return player; }, get enemies() { return enemies; },
   set enemies(v) { enemies = v; }, joystick, set running(v) { gameRunning = v; }, set paused(v) { paused = v; },
@@ -309,10 +315,13 @@ G.joystick.active = true; G.joystick.nx = 1; G.joystick.ny = 0; G.movePlayer(0.4
 check('hit 이동 중 큰 게와 0.6 이내면 사망', G.lives === 2, 'lives=' + G.lives);
 // 큰 게 몸통이 옆 칸 고랑에 걸쳐도 사망
 fresh(); G.board[10][5] = 2; G.trail.push([5, 10]);
-G.enemies = [still(5, 10.8, 'red'), still(20, 30, 'blue')];      // 중심은 (5,11) 칸, 고랑 칸 가장자리까지 0.3
-check('trail 큰 게 몸통이 옆 칸 고랑에 걸침 → 닿음', G.crabTouchesTrail(G.enemies[0]) === true);
+G.enemies = [still(5, 10.5, 'red'), still(20, 30, 'blue')];      // 고랑 선(칸 중심)까지 0.5 < 0.359+0.175
+check('trail 큰 게 몸통이 가는 고랑 선에 겹침 → 닿음', G.crabTouchesTrail(G.enemies[0]) === true);
 G.updateEnemies(0.016);
-check('trail 걸친 상태에서 목숨 감소', G.lives === 2, 'lives=' + G.lives);
+check('trail 겹친 상태에서 목숨 감소', G.lives === 2, 'lives=' + G.lives);
+fresh(); G.board[10][5] = 2; G.trail.push([5, 10]);
+G.enemies = [still(5, 10.8, 'red'), still(20, 30, 'blue')];      // 고랑 칸 안쪽이지만 그려진 선에서 0.8 떨어짐
+check('trail 고랑 칸에 걸쳐도 그려진 선에 안 닿으면 무사(가는 고랑 기준)', G.crabTouchesTrail(G.enemies[0]) === false);
 fresh(); G.board[10][5] = 2; G.trail.push([5, 10]);
 G.enemies = [still(5, 11, 'red'), still(20, 30, 'blue')];        // 가장자리까지 0.5 > 0.36
 G.updateEnemies(0.016);
@@ -344,6 +353,145 @@ check('fee 표시 형식', G.formatFee(1) === '0.1p' && G.formatFee(12) === '1.2
   check('fee index.html에 옛 화폐 단위 글자(U+C6D0) 없음 (오락실 이름 제외)', !/\uC6D0/.test(html2), (html2.match(/.{10}\uC6D0.{5}/g) || []).join(' | '));
   check('fee 상수: 한 판 0.1p, 다음 단계 0, 이어서 하기 0.1p', G.GAME_FEE === 0.1 && G.STAGE_FEE === 0 && G.CONTINUE_FEE === 0.1);
 }
+
+// --- 가는 고랑 판정: 선분 경로 ---
+fresh(); G.player.x = 4; G.player.y = 14;
+[[1,10],[2,10],[3,10],[3,11],[3,12],[4,13]].forEach(([x,y]) => { G.board[y][x] = 2; G.trail.push([x,y]); });
+G.enemies = [still(2.5, 11, 'red'), still(20, 30, 'blue')];
+check('furrow 모서리 안쪽(선에서 0.5) → 닿음', G.crabTouchesTrail(G.enemies[0]) === true);
+G.enemies = [still(1.6, 11.6, 'red'), still(20, 30, 'blue')];
+check('furrow 고랑 칸 옆이지만 선에서 먼 곳(≈1.4) → 무사', G.crabTouchesTrail(G.enemies[0]) === false);
+G.enemies = [still(3.5, 12.5, 'red'), still(20, 30, 'blue')];
+check('furrow 대각선 이음 위 → 닿음', G.crabTouchesTrail(G.enemies[0]) === true);
+G.enemies = [still(4, 13.9, 'red'), still(20, 30, 'blue')];
+check('furrow 마지막 칸→농부 구간도 고랑', G.crabTouchesTrail(G.enemies[0]) === true);
+check('furrow 시작은 내 땅 가장자리(0.5,10)', JSON.stringify(G.furrowSegments()[0][0]) === '[0.5,10]', JSON.stringify(G.furrowSegments()[0][0]));
+
+// --- 목숨: 다음 단계 +1, 최대 5 ---
+G.startGame(); G.gameOver(true); G.nextStage();
+check('lives 다음 단계로 가면 목숨 +1 (3→4)', G.lives === 4, 'lives=' + G.lives);
+G.nextStage();
+check('lives 4→5', G.lives === 5);
+G.nextStage();
+check('lives 최대 5에서 더 안 늘어남', G.lives === G.MAX_LIVES && G.lives === 5, 'lives=' + G.lives);
+check('lives 다음 단계 요금 없음(0.1p 유지)', G.feeTenths === 1);
+
+// --- 굴러다니는 아이템 ---
+const pu = (kind, x, y, vx, vy) => ({ kind, x, y, vx, vy, angle: 0 });
+fresh(3); G.enemies = [still(5, 30, 'red'), still(22, 30, 'blue')];
+G.playTime = 0; G.updatePowerups(0.016);
+check('powerup 시작 직후에는 BidGuard 없음', !G.powerups.some(p => p.kind === 'bidguard'));
+G.playTime = G.BIDGUARD_FIRST_DELAY + 0.1; G.updatePowerups(0.016);
+check('powerup 5초 뒤 BidGuard 1개 등장', G.powerups.filter(p => p.kind === 'bidguard').length === 1);
+const bg = G.powerups.find(p => p.kind === 'bidguard');
+check('powerup 농부와 6칸 이상 떨어진 빈 칸에서 등장', Math.hypot(bg.x - G.player.x, bg.y - G.player.y) >= 6 && G.board[Math.round(bg.y)][Math.round(bg.x)] === 0);
+G.playTime += 100; G.updatePowerups(0.016);
+check('powerup BidGuard는 최대 1개', G.powerups.filter(p => p.kind === 'bidguard').length === 1);
+// 굴러감(회전) + 움직임
+G.powerups = [pu('bidguard', 14, 18, 1.3, 0)];
+for (let i = 0; i < 20; i++) G.updatePowerups(0.016);
+check('powerup 굴러가며 움직이고 회전함', G.powerups[0].x > 14.3 && Math.abs(G.powerups[0].angle) > 0.5, 'x=' + G.powerups[0].x.toFixed(2) + ' angle=' + G.powerups[0].angle.toFixed(2));
+// 테두리에서 튕김
+G.powerups = [pu('bidguard', 1.25, 18, -1.3, 0)];
+G.updatePowerups(0.05);
+check('powerup 테두리에서 튕김', G.powerups[0].vx > 0);
+// 내 땅에서 튕김
+G.board[18][16] = 1; G.powerups = [pu('bidguard', 15.6, 18, 1.3, 0)];
+G.updatePowerups(0.05);
+check('powerup 내 땅에서 튕김', G.powerups[0].vx < 0);
+// 게와 부딪히면 반사
+fresh(3); G.enemies = [still(15, 18, 'red'), still(22, 30, 'blue')];
+G.powerups = [pu('bidguard', 14.3, 18, 1.3, 0)];
+G.updatePowerups(0.016);
+check('powerup 큰 게와 부딪히면 반사', G.powerups[0].vx < 0 && Math.hypot(G.powerups[0].x - 15, G.powerups[0].y - 18) >= G.POWERUP_RADIUS + G.BIG_CRAB_HIT_RADIUS - 1e-9, 'vx=' + G.powerups[0].vx);
+check('powerup 게는 그대로(아이템만 튕김)', G.enemies[0].x === 15 && G.enemies.length === 2);
+G.babies = [baby(10, 10)]; G.powerups = [pu('bidguard', 10, 10.6, 0, -1.3)];
+G.updatePowerups(0.016);
+check('powerup 새끼 게와 부딪혀도 반사', G.powerups[0].vy > 0);
+// 먹으면 트랙터
+fresh(3); G.enemies = [still(5, 30, 'red'), still(22, 30, 'blue')];
+G.player.x = 10; G.player.y = 10;
+G.powerups = [pu('bidguard', 10.5, 10, 0, 0)]; G.playTime = 7;
+G.updatePowerups(0.016);
+check('tractor BidGuard를 먹으면 트랙터', G.tractorRemaining === G.TRACTOR_SECONDS && G.player.type === 'tractor' && G.powerups.length === 0);
+check('powerup 먹힌 BidGuard는 25초 뒤 다시', Math.abs(G.bidguardNextAt - (7 + G.BIDGUARD_RESPAWN)) < 1e-9);
+// 30초 타이머
+G.joystick.active = false;
+let t = 100000; G.gameLoop(t);
+for (let i = 0; i < 25 / 0.05; i++) { t += 50; G.gameLoop(t); }
+check('tractor 25초 뒤 아직 트랙터, 남은 시간 약 5초', G.player.type === 'tractor' && Math.abs(G.tractorRemaining - 5) < 0.06, 'remain=' + G.tractorRemaining.toFixed(2));
+// 마지막 5초: 농부/트랙터 번갈아, 끝에 갈수록 농부 비율 증가
+const share = () => { let f = 0; for (let k = 0; k < 600; k++) { G.animTime = k / 600; if (G.playerSpriteType() === 'farmer') f++; } return f / 600; };
+G.setTractor(4.5); const s1 = share(); G.setTractor(1); const s2 = share(); G.setTractor(20); const s0 = share();
+check('tractor 마지막 5초에는 농부 모습이 섞이고 끝에 갈수록 늘어남', s0 === 0 && s1 > 0 && s2 > s1 && s2 < 1, `20초:${s0} 4.5초:${s1.toFixed(2)} 1초:${s2.toFixed(2)}`);
+G.setTractor(5);
+for (let i = 0; i < 5.2 / 0.05; i++) { t += 50; G.gameLoop(t); }
+check('tractor 30초 지나면 농부로 돌아옴', G.tractorRemaining === 0 && G.player.type === 'farmer');
+// 무적 + 몰살
+fresh(3); G.player.x = 10; G.player.y = 10; G.activateTractor();
+G.enemies = [still(10.4, 10, 'red'), still(22, 30, 'blue')];
+G.babies = [baby(9.6, 10.2), baby(20, 20)];
+G.gameLoop(200000); G.gameLoop(200016);
+check('tractor 닿은 큰 게 몰살, 목숨 그대로', G.lives === 3 && G.enemies.length === 1 && G.enemies[0].type === 'blue', 'lives=' + G.lives + ' enemies=' + G.enemies.length);
+check('tractor 닿은 새끼 게 몰살, 먼 새끼는 남음', G.babies.length === 1 && G.babies[0].x === 20);
+check("tractor 몰살 효과 '펑!'", G.effects.filter(f => f.text === '펑!').length === 2);
+check('tractor 큰 게는 5초 뒤 다시 나오도록 예약', G.crabRespawns.length === 1 && G.crabRespawns[0].type === 'red');
+// 고랑에 큰 게가 닿아도 무사
+fresh(3); G.activateTractor(); G.player.x = 7; G.player.y = 10;
+G.board[10][5] = 2; G.board[10][6] = 2; G.trail.push([5, 10], [6, 10]);
+G.enemies = [still(6, 10, 'red'), still(22, 30, 'blue')];
+G.updateEnemies(0.016);
+check('tractor 큰 게가 고랑에 닿아도 목숨 그대로, 고랑 유지', G.lives === 3 && countTrail() === 2);
+// 점령 순간 큰 게가 고랑 위여도 점령 진행
+fresh(3); G.activateTractor();
+{
+  const p = G.player; p.x = 0; p.y = 18;
+  const step = (nx, ny) => { G.joystick.active = true; G.joystick.nx = nx; G.joystick.ny = ny; G.movePlayer(0.1 / 0.52); };
+  for (let i = 0; i < 6; i++) step(1, 0);
+  G.enemies = [still(3, 18, 'red'), still(20, 30, 'blue')];
+  step(0, 1); for (let i = 0; i < 7; i++) step(-1, 0);
+  check('tractor 점령 순간 큰 게가 고랑 위여도 죽지 않고 점령', G.lives === 3 && countTrail() === 0 && countClaimed() > borderCells, 'lives=' + G.lives);
+}
+// 모든 큰 게가 몰살되면 5초 뒤 멀리서 다시
+fresh(3); G.player.x = 10; G.player.y = 10; G.activateTractor();
+G.enemies = [still(10.3, 10, 'red'), still(9.7, 10, 'blue')];
+G.checkPlayerHit();
+check('tractor 큰 게 둘 다 몰살', G.enemies.length === 0 && G.crabRespawns.length === 2);
+G.playTime += 4; G.updateEnemies(0.016);
+check('respawn 4초 뒤에는 아직 없음', G.enemies.length === 0);
+G.playTime += 1.1; G.updateEnemies(0.016);
+check('respawn 5초 뒤 큰 게 2마리 다시(홍게·청게)', G.enemies.length === 2 && G.enemies.some(e => e.type === 'red') && G.enemies.some(e => e.type === 'blue'));
+check('respawn 농부와 8칸 이상 떨어진 빈 칸', G.enemies.every(e => Math.hypot(e.x - 10, e.y - 10) >= 8 && G.board[Math.round(e.y)][Math.round(e.x)] === 0));
+// 트랙터 판정 반지름은 그림 크기에 맞춤
+check('tractor 판정 반지름 > 농부 반지름', G.TRACTOR_HIT_RADIUS > G.PLAYER_HIT_RADIUS && G.TRACTOR_HIT_RADIUS < 0.65, 'r=' + G.TRACTOR_HIT_RADIUS.toFixed(3));
+
+// --- 지주 로고: 목숨 1개일 때만 ---
+fresh(3); G.enemies = [still(5, 30, 'red'), still(22, 30, 'blue')];
+G.lives = 3; G.updatePowerups(0.016);
+check('jiju 목숨 3개일 때 없음', !G.powerups.some(p => p.kind === 'jiju'));
+G.lives = 2; G.updatePowerups(0.016);
+check('jiju 목숨 2개일 때 없음', !G.powerups.some(p => p.kind === 'jiju'));
+G.lives = 1; G.updatePowerups(0.016);
+check('jiju 목숨 1개가 되면 등장', G.powerups.filter(p => p.kind === 'jiju').length === 1);
+G.updatePowerups(0.016);
+check('jiju 최대 1개', G.powerups.filter(p => p.kind === 'jiju').length === 1);
+{ const j = G.powerups.find(p => p.kind === 'jiju'); const x0 = j.x, y0 = j.y; for (let i = 0; i < 20; i++) G.updatePowerups(0.016);
+  check('jiju BidGuard처럼 굴러다님', Math.hypot(j.x - x0, j.y - y0) > 0.2 && Math.abs(j.angle) > 0.3); }
+G.lives = 2; G.updatePowerups(0.016);
+check('jiju 목숨이 2개 이상이 되면 사라짐', !G.powerups.some(p => p.kind === 'jiju'));
+// 이어서 하기로 목숨 3 복구 → 지주 로고 사라짐
+fresh(3); G.enemies = [still(5, 30, 'red'), still(22, 30, 'blue')];
+G.lives = 1; G.updatePowerups(0.016);
+G.player.x = 22; G.player.y = 30; G.gameLoop(300000); G.gameLoop(300016);   // 마지막 목숨 잃음 → 게임 오버
+check('jiju 게임 오버 상태', G.lives === 0 && els['continue-btn'].style.display === 'block');
+G.continueGame();
+check('jiju 이어서 하기로 목숨 3 → 지주 로고 사라짐', G.lives === 3 && !G.powerups.some(p => p.kind === 'jiju'));
+// 지주 로고를 먹어도 트랙터
+fresh(3); G.enemies = [still(5, 30, 'red'), still(22, 30, 'blue')];
+G.lives = 1; G.player.x = 10; G.player.y = 10;
+G.powerups = [pu('jiju', 10.4, 10, 0, 0)];
+G.updatePowerups(0.016);
+check('jiju 먹으면 트랙터 30초', G.tractorRemaining === G.TRACTOR_SECONDS && G.player.type === 'tractor');
 
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASSED');
 process.exit(fail ? 1 : 0);

@@ -170,7 +170,36 @@ const BIG_CRAB_HIT_RADIUS = CRAB_BODY_R * CRAB_DRAW_SCALE * HIT_FAIRNESS;     //
 const BABY_HIT_RADIUS = CRAB_BODY_R * CRAB_DRAW_SCALE * BABY_SCALE * HIT_FAIRNESS; // ≈ 0.25
 const BIG_CRAB_HIT_DIST = PLAYER_HIT_RADIUS + BIG_CRAB_HIT_RADIUS;            // ≈ 0.63 (예전 0.55)
 const BABY_HIT_DIST = PLAYER_HIT_RADIUS + BABY_HIT_RADIUS;                    // ≈ 0.53 (예전 0.4)
-const CRAB_MEET_DIST = BIG_CRAB_HIT_RADIUS * 2;                               // ≈ 0.72 홍게·청게 몸통이 닿는 거리 (예전 0.7)
+const CRAB_MEET_DIST = BIG_CRAB_HIT_RADIUS * 2;
+// 고랑 판정: 그려지는 가는 고랑(폭 FURROW_WIDTH)과 같은 선분 기준
+const FURROW_WIDTH = 0.35;
+const FURROW_HIT_HALF = FURROW_WIDTH / 2;
+
+// 목숨: 다음 단계로 가면 +1, 최대 MAX_LIVES
+const MAX_LIVES = 5;
+
+// 굴러다니는 아이템: 'bidguard'(BidGuard 로고), 'jiju'(지주 로고). 먹으면 트랙터로 변신
+const POWERUP_DRAW_R = 0.5;                                  // 그림 반지름(칸)
+const POWERUP_RADIUS = POWERUP_DRAW_R * HIT_FAIRNESS;        // 충돌 반지름 ≈ 0.475
+const POWERUP_SPEED = 1.3;
+const BIDGUARD_FIRST_DELAY = 5;   // 단계 시작 후 첫 등장 (초)
+const BIDGUARD_RESPAWN = 25;      // 먹힌 뒤 다시 등장 (초). 판에는 언제나 최대 1개
+// 지주 로고: 목숨이 1개 남았을 때만 판에 나옴(최대 1개). 목숨이 2개 이상이 되면 사라짐
+
+// 트랙터: 30초 무적. 닿는 게(큰 게·새끼 게)는 몰살. 끝나기 5초 전부터 깜빡이며 농부로 돌아감
+const TRACTOR_SECONDS = 30;
+const TRACTOR_WARN_SECONDS = 5;
+const TRACTOR_DRAW_SCALE = 2.0;                                           // 트랙터 그림 크기 배율(농부 1.6보다 큼)
+const TRACTOR_BODY_R = 0.3;                                               // 그림 size 기준 차체 반지름
+const TRACTOR_HIT_RADIUS = TRACTOR_BODY_R * TRACTOR_DRAW_SCALE * HIT_FAIRNESS; // ≈ 0.57
+const CRAB_RESPAWN_SECONDS = 5;   // 트랙터에 몰살된 큰 게가 다시 나오기까지 (초)
+const CRAB_RESPAWN_MIN_DIST = 8;  // 다시 나올 때 농부와의 최소 거리(칸) — 화면 밖 쪽
+
+let powerups = [];
+let bidguardNextAt = BIDGUARD_FIRST_DELAY;  // playTime 기준, null이면 판에 있음
+let tractorRemaining = 0;
+let crabRespawns = [];            // { type, at }
+let logoImgs = {};                               // ≈ 0.72 홍게·청게 몸통이 닿는 거리 (예전 0.7)
 let cam = { x: 0, y: 0 };        // 화면 왼쪽 위가 가리키는 판 좌표 (칸)
 let viewW = 0, viewH = 0;        // 화면에 보이는 칸 수
 let minimap, mctx;
@@ -192,6 +221,10 @@ function initBoard() {
   pairCooldown = {};
   effects = [];
   playTime = 0;
+  powerups = [];
+  bidguardNextAt = BIDGUARD_FIRST_DELAY;
+  setTractor(0);
+  crabRespawns = [];
   document.getElementById('stage').textContent = stage;
   snapCamera();
   updateTerritory();
@@ -288,7 +321,6 @@ function drawDirtCell(px, py, size, cx, cy) {
 
 // 고랑: 칸 전체를 칠하지 않고, 농부가 지나간 칸 중심을 잇는 가는 고랑(칸 폭의 약 35%)으로 그림.
 // 그림만 바뀜. 판정은 여전히 고랑 칸(board === 2) 전체 기준.
-const FURROW_WIDTH = 0.35;
 function furrowPath(points) {
   ctx.beginPath();
   points.forEach(([x, y], i) => {
@@ -296,8 +328,9 @@ function furrowPath(points) {
     if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   });
 }
-function drawFurrows() {
-  if (!trail.length) return;
+// 고랑 선분 목록(칸 좌표 점들의 배열들). 그림과 큰 게 판정이 같은 선을 씀.
+function furrowSegments() {
+  if (!trail.length) return [];
   // 시작점: 고랑이 시작된 내 땅 칸(상하좌우 우선)에서부터 잇고, 끝은 농부 위치까지
   const [sx, sy] = trail[0];
   let start = null;
@@ -317,6 +350,11 @@ function drawFurrows() {
   if (Math.abs(player.x - last[0]) <= 1 && Math.abs(player.y - last[1]) <= 1) {
     segments[segments.length - 1].push([player.x, player.y]);
   }
+  return segments.filter(seg => seg.length > 0);
+}
+function drawFurrows() {
+  const segments = furrowSegments();
+  if (!segments.length) return;
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -345,11 +383,111 @@ function drawFurrows() {
 // 플레이어 그리기 함수 표. (px, py)는 화면 픽셀 위치, size는 그림 크기(px).
 // 트랙터 농부를 넣을 때: function drawTractor(px, py, facing, size) {...} 를 만들고
 // PLAYER_SPRITES.tractor = drawTractor; player.type = 'tractor'; 로 바꾸면 됨.
-const PLAYER_SPRITES = { farmer: drawFarmer };
+const PLAYER_SPRITES = { farmer: drawFarmer, tractor: drawTractor };
+// 트랙터가 끝나기 5초 전부터: 트랙터와 농부를 번갈아 보여 주고, 끝에 가까울수록 농부 비율이 커짐
+function playerSpriteType() {
+  if (player.type !== 'tractor' || tractorRemaining > TRACTOR_WARN_SECONDS) return player.type;
+  const farmerShare = 1 - tractorRemaining / TRACTOR_WARN_SECONDS;   // 0 → 1
+  const phase = (animTime * 6) % 1;
+  return phase < farmerShare ? 'farmer' : 'tractor';
+}
 function drawPlayer() {
   if (joystick.active && Math.abs(joystick.nx) > 0.2) player.facing = joystick.nx < 0 ? -1 : 1;
-  const sprite = PLAYER_SPRITES[player.type] || drawFarmer;
-  sprite(player.x * cellSize, player.y * cellSize, player.facing, cellSize * PLAYER_DRAW_SCALE);
+  const type = playerSpriteType();
+  const sprite = PLAYER_SPRITES[type] || drawFarmer;
+  const scale = type === 'tractor' ? TRACTOR_DRAW_SCALE : PLAYER_DRAW_SCALE;
+  sprite(player.x * cellSize, player.y * cellSize, player.facing, cellSize * scale);
+}
+
+// 트랙터 탄 농부 (size = 그림 크기 px, 약 1.6칸). 오른쪽을 보는 그림, facing으로 좌우 반전
+function drawTractor(px, py, facing, size) {
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(facing < 0 ? -1 : 1, 1);
+  const s = size;
+  // 차체
+  ctx.fillStyle = '#d62828';
+  ctx.fillRect(-s*0.30, -s*0.05, s*0.55, s*0.20);
+  ctx.fillRect(s*0.05, -s*0.17, s*0.22, s*0.14);         // 엔진 덮개
+  ctx.fillStyle = '#333';
+  ctx.fillRect(s*0.20, -s*0.27, s*0.04, s*0.12);         // 굴뚝
+  // 운전석 등받이
+  ctx.fillStyle = '#8a1c1c';
+  ctx.fillRect(-s*0.30, -s*0.22, s*0.06, s*0.18);
+  // 농부 (상반신 + 밀짚모자)
+  ctx.fillStyle = '#3a5a1a';
+  ctx.fillRect(-s*0.22, -s*0.20, s*0.14, s*0.16);
+  ctx.fillStyle = '#f5d0a0';
+  ctx.beginPath(); ctx.arc(-s*0.15, -s*0.27, s*0.075, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#d4a017';
+  ctx.beginPath(); ctx.ellipse(-s*0.15, -s*0.33, s*0.13, s*0.04, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(-s*0.21, -s*0.40, s*0.12, s*0.07);
+  // 바퀴 (큰 뒷바퀴, 작은 앞바퀴) — 굴러가는 바퀴살
+  const wheel = (wx, wy, r) => {
+    ctx.fillStyle = '#1b1b1b';
+    ctx.beginPath(); ctx.arc(wx, wy, r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#f2c14e';
+    ctx.beginPath(); ctx.arc(wx, wy, r*0.45, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = Math.max(1, s*0.02);
+    const a = animTime * 8;
+    ctx.beginPath(); ctx.moveTo(wx + Math.cos(a)*r*0.45, wy + Math.sin(a)*r*0.45); ctx.lineTo(wx - Math.cos(a)*r*0.45, wy - Math.sin(a)*r*0.45); ctx.stroke();
+  };
+  wheel(-s*0.18, s*0.17, s*0.17);
+  wheel(s*0.20, s*0.22, s*0.10);
+  ctx.restore();
+}
+
+// 굴러다니는 로고 아이템: 이미지가 있으면 동그랗게 잘라 회전, 없으면 캔버스 배지
+function drawPowerup(p) {
+  const r = POWERUP_DRAW_R * cellSize;
+  ctx.save();
+  ctx.translate(p.x * cellSize, p.y * cellSize);
+  // 반짝이는 테두리
+  ctx.shadowColor = p.kind === 'jiju' ? '#ff9a3c' : '#ffd700';
+  ctx.shadowBlur = 10 + 6 * Math.sin(animTime * 6);
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.rotate(p.angle);
+  const img = logoImgs[p.kind];
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.92, 0, Math.PI * 2); ctx.clip();
+  if (img && img.complete && img.naturalWidth) {
+    ctx.drawImage(img, -r, -r, r * 2, r * 2);
+  } else {
+    ctx.fillStyle = p.kind === 'jiju' ? '#b5361c' : '#0b3d91';
+    ctx.fillRect(-r, -r, r * 2, r * 2);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = `bold ${Math.round(r * (p.kind === 'jiju' ? 0.6 : 0.8))}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.kind === 'jiju' ? 'JIJU' : 'BG', 0, 0);
+  }
+  ctx.restore();
+  ctx.strokeStyle = p.kind === 'jiju' ? '#ff9a3c' : '#ffd700';
+  ctx.lineWidth = Math.max(2, r * 0.12);
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.94, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// 트랙터 남은 시간: 게임 화면 위쪽 가운데 큰 숫자. 마지막 5초는 빨갛게 깜빡임
+function drawTractorCountdown(w) {
+  if (tractorRemaining <= 0) return;
+  const n = Math.ceil(tractorRemaining);
+  const warn = tractorRemaining <= TRACTOR_WARN_SECONDS;
+  if (warn && (animTime * 4) % 1 > 0.6) return;
+  ctx.save();
+  ctx.font = `bold ${warn ? 64 : 52}px Orbitron, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.lineWidth = 6; ctx.strokeStyle = '#000';
+  ctx.fillStyle = warn ? '#ff3b3b' : '#ffd700';
+  ctx.strokeText(String(n), w / 2, 10);
+  ctx.fillText(String(n), w / 2, 10);
+  ctx.font = 'bold 14px sans-serif';
+  ctx.lineWidth = 4;
+  ctx.strokeText('트랙터 무적', w / 2, warn ? 78 : 66);
+  ctx.fillStyle = '#fff';
+  ctx.fillText('트랙터 무적', w / 2, warn ? 78 : 66);
+  ctx.restore();
 }
 
 function drawFarmer(px, py, facing, size) {
@@ -458,12 +596,14 @@ function draw() {
   drawFurrows();
   ctx.restore();
 
+  powerups.forEach(drawPowerup);
   enemies.forEach(e => drawCrab(e, cellSize));
   babies.forEach(b => drawCrab(b, cellSize));
   drawEffects();
   drawPlayer();
   ctx.restore();
 
+  drawTractorCountdown(w);
   drawMinimap();
 }
 
@@ -486,7 +626,8 @@ function drawMinimap() {
   };
   babies.forEach(b => dot(b.x, b.y, 1.6, b.color));
   enemies.forEach(e => dot(e.x, e.y, 2.6, e.type === 'red' ? '#ff4d5a' : '#4d7dff'));
-  dot(player.x, player.y, 2.8, '#ffffff');
+  powerups.forEach(p => dot(p.x, p.y, 3, p.kind === 'jiju' ? '#ff9a3c' : '#ffd700'));
+  dot(player.x, player.y, tractorRemaining > 0 ? 3.4 : 2.8, tractorRemaining > 0 ? '#ff3b3b' : '#ffffff');
   mctx.strokeStyle = '#ffffff';
   mctx.lineWidth = 1;
   mctx.strokeRect(cam.x * sx, cam.y * sy, Math.min(viewW, GRID_W) * sx, Math.min(viewH, GRID_H) * sy);
@@ -503,22 +644,29 @@ function markTrail(cx, cy) {
   return false;
 }
 
-// 큰 게(홍게·청게)가 고랑(선) 칸 위에 있는지. 새끼 게는 고랑을 무시한다.
-// 게 몸통(동그라미 판정)이 고랑 칸(한 변 1칸 정사각형)에 닿는지. 가운데 칸만 보던 예전과 달리 옆 칸 고랑에 걸쳐도 닿음.
+// 점 (px,py)에서 선분 (ax,ay)-(bx,by)까지 거리
+function distToSegment(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / len2)) : 0;
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+}
+// 큰 게 몸통(동그라미 판정)이 그려진 가는 고랑(칸 중심을 잇는 선, 폭 FURROW_WIDTH)에 겹치는지. 새끼 게는 고랑을 무시한다.
 function crabTouchesTrail(e, radius) {
-  const r = radius === undefined ? BIG_CRAB_HIT_RADIUS : radius;
-  const x0 = Math.floor(e.x - r - 0.5), x1 = Math.ceil(e.x + r + 0.5);
-  const y0 = Math.floor(e.y - r - 0.5), y1 = Math.ceil(e.y + r + 0.5);
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      if (!isValid(x, y) || board[y][x] !== 2) continue;
-      const dx = Math.max(Math.abs(e.x - x) - 0.5, 0), dy = Math.max(Math.abs(e.y - y) - 0.5, 0);
-      if (dx * dx + dy * dy < r * r) return true;
+  const r = (radius === undefined ? BIG_CRAB_HIT_RADIUS : radius) + FURROW_HIT_HALF;
+  for (const seg of furrowSegments()) {
+    if (seg.length === 1) {
+      if (Math.hypot(e.x - seg[0][0], e.y - seg[0][1]) < r) return true;
+      continue;
+    }
+    for (let k = 1; k < seg.length; k++) {
+      if (distToSegment(e.x, e.y, seg[k-1][0], seg[k-1][1], seg[k][0], seg[k][1]) < r) return true;
     }
   }
   return false;
 }
 function bigCrabOnTrail() {
+  if (tractorRemaining > 0) return false;     // 트랙터는 무적: 고랑에 게가 닿아도 상관없음
   return enemies.some(e => crabTouchesTrail(e));
 }
 
@@ -534,14 +682,18 @@ function movePlayer(dt) {
     const cx = Math.round(nx);
     const cy = Math.round(ny);
     if (!isValid(cx, cy)) continue;
-    for (const e of enemies) {
-      if (Math.hypot(nx - e.x, ny - e.y) < BIG_CRAB_HIT_DIST) { loseLife(); return; }
-    }
-    for (const b of babies) {
-      if (Math.hypot(nx - b.x, ny - b.y) < BABY_HIT_DIST) { loseLife(); return; }
-    }
-    if (board[cy][cx] === 2 && (cx !== Math.round(player.x) || cy !== Math.round(player.y))) {
-      loseLife(); return;
+    if (tractorRemaining > 0) {
+      stompCrabsAt(nx, ny);                     // 트랙터: 닿는 게는 몰살, 내 고랑을 다시 밟아도 무사
+    } else {
+      for (const e of enemies) {
+        if (Math.hypot(nx - e.x, ny - e.y) < BIG_CRAB_HIT_DIST) { loseLife(); return; }
+      }
+      for (const b of babies) {
+        if (Math.hypot(nx - b.x, ny - b.y) < BABY_HIT_DIST) { loseLife(); return; }
+      }
+      if (board[cy][cx] === 2 && (cx !== Math.round(player.x) || cy !== Math.round(player.y))) {
+        loseLife(); return;
+      }
     }
     const hitClaimed = markTrail(cx, cy);
     player.x = nx; player.y = ny;
@@ -616,11 +768,129 @@ function updateEnemies(dt) {
       e.vx *= -1; e.vy *= -1;
       e.x += e.vx * 0.4; e.y += e.vy * 0.4;
     }
-    if (crabTouchesTrail(e)) loseLife();
+    if (tractorRemaining <= 0 && crabTouchesTrail(e)) loseLife();
   });
   spawnBabies();
   updateBabies(dt);
+  updateCrabRespawns();
+  updatePowerups(dt);
 }
+
+// ---------- 트랙터 ----------
+function setTractor(seconds) {
+  tractorRemaining = Math.max(0, seconds);
+  player.type = tractorRemaining > 0 ? 'tractor' : 'farmer';
+}
+function activateTractor() { setTractor(TRACTOR_SECONDS); }   // 이미 트랙터면 30초로 다시 채움
+function updateTractor(dt) {
+  if (tractorRemaining <= 0) return;
+  setTractor(tractorRemaining - dt);
+}
+// 트랙터 위치 (x,y)에 닿은 게를 모두 없앰. 큰 게는 CRAB_RESPAWN_SECONDS 뒤 멀리서 다시 나옴
+function stompCrabsAt(x, y) {
+  let killed = 0;
+  enemies = enemies.filter(e => {
+    if (Math.hypot(x - e.x, y - e.y) < TRACTOR_HIT_RADIUS + BIG_CRAB_HIT_RADIUS) {
+      effects.push({ x: e.x, y: e.y, t: 0, text: '펑!' });
+      crabRespawns.push({ type: e.type, at: playTime + CRAB_RESPAWN_SECONDS });
+      killed++;
+      return false;
+    }
+    return true;
+  });
+  babies = babies.filter(b => {
+    if (Math.hypot(x - b.x, y - b.y) < TRACTOR_HIT_RADIUS + BABY_HIT_RADIUS) {
+      effects.push({ x: b.x, y: b.y, t: 0, text: '펑!' });
+      killed++;
+      return false;
+    }
+    return true;
+  });
+  if (killed) pairCooldown = {};   // 게 순서가 바뀌므로 쌍 쿨다운 초기화
+  return killed;
+}
+// 빈 칸 중에서 농부와 minDist 이상 떨어진 곳 (가장 먼 쪽 후보 중 무작위). 없으면 가장 먼 빈 칸
+function farEmptyCell(minDist) {
+  const cand = [];
+  let best = null, bestD = -1;
+  for (let y = 2; y < GRID_H - 2; y++) for (let x = 2; x < GRID_W - 2; x++) {
+    if (board[y][x] !== 0) continue;
+    const d = Math.hypot(x - player.x, y - player.y);
+    if (d >= minDist) cand.push([x, y]);
+    if (d > bestD) { bestD = d; best = [x, y]; }
+  }
+  if (cand.length) return cand[Math.floor(Math.random() * cand.length)];
+  return best;
+}
+function updateCrabRespawns() {
+  crabRespawns = crabRespawns.filter(r => {
+    if (playTime < r.at) return true;
+    const c = farEmptyCell(CRAB_RESPAWN_MIN_DIST);
+    if (!c) return true;                       // 빈 칸이 없으면 다음에
+    const ang = Math.random() * Math.PI * 2;
+    enemies.push({ x: c[0], y: c[1], vx: Math.cos(ang) * 1.2, vy: Math.sin(ang) * 1.2, type: r.type, legPhase: Math.random() * 6 });
+    return false;
+  });
+}
+
+// ---------- 굴러다니는 아이템 (BidGuard / 지주 로고) ----------
+function spawnPowerup(kind) {
+  const c = farEmptyCell(6);
+  if (!c) return null;
+  const ang = Math.random() * Math.PI * 2;
+  const p = { kind, x: c[0], y: c[1], vx: Math.cos(ang) * POWERUP_SPEED, vy: Math.sin(ang) * POWERUP_SPEED, angle: 0 };
+  powerups.push(p);
+  return p;
+}
+function updatePowerups(dt) {
+  // 등장 규칙
+  const hasBg = powerups.some(p => p.kind === 'bidguard');
+  if (!hasBg && bidguardNextAt !== null && playTime >= bidguardNextAt) {
+    if (spawnPowerup('bidguard')) bidguardNextAt = null;
+  }
+  const hasJiju = powerups.some(p => p.kind === 'jiju');
+  if (lives === 1 && !hasJiju) spawnPowerup('jiju');
+  if (lives > 1 && hasJiju) powerups = powerups.filter(p => p.kind !== 'jiju');
+  // 움직임: 게처럼 빈 땅을 굴러다님 (테두리·내 땅에서 튕김, 고랑은 무시), 게와 부딪히면 반사
+  powerups.forEach(p => {
+    p.x += p.vx * dt * 1.4;
+    p.y += p.vy * dt * 1.4;
+    p.angle += Math.hypot(p.vx, p.vy) * dt * 1.4 / POWERUP_DRAW_R * (p.vx >= 0 ? 1 : -1);  // 굴러가는 회전
+    if (p.x < 1.2 || p.x > GRID_W-2.2) { p.vx *= -1; p.x = Math.min(Math.max(p.x, 1.2), GRID_W-2.2); }
+    if (p.y < 1.2 || p.y > GRID_H-2.2) { p.vy *= -1; p.y = Math.min(Math.max(p.y, 1.2), GRID_H-2.2); }
+    const cx = Math.round(p.x), cy = Math.round(p.y);
+    if (isValid(cx, cy) && board[cy][cx] === 1) {
+      p.vx *= -1; p.vy *= -1;
+      p.x += p.vx * 0.4; p.y += p.vy * 0.4;
+    }
+    for (const c of enemies.concat(babies)) {
+      const cr = c.type === 'baby' ? BABY_HIT_RADIUS : BIG_CRAB_HIT_RADIUS;
+      bounceOff(p, c, POWERUP_RADIUS + cr);
+    }
+  });
+  // 농부가 먹으면 트랙터
+  powerups = powerups.filter(p => {
+    if (Math.hypot(p.x - player.x, p.y - player.y) < playerHitRadius() + POWERUP_RADIUS) {
+      effects.push({ x: p.x, y: p.y, t: 0, text: p.kind === 'jiju' ? '지주!' : 'BG!' });
+      if (p.kind === 'bidguard') bidguardNextAt = playTime + BIDGUARD_RESPAWN;
+      activateTractor();
+      return false;
+    }
+    return true;
+  });
+}
+// p가 c와 minDist 안으로 겹쳐 있고 서로 다가가는 중이면 반사하고 밀어냄
+function bounceOff(p, c, minDist) {
+  const dx = p.x - c.x, dy = p.y - c.y;
+  const d = Math.hypot(dx, dy);
+  if (d >= minDist) return false;
+  const nx = d ? dx / d : 1, ny = d ? dy / d : 0;
+  const vn = p.vx * nx + p.vy * ny;
+  if (vn < 0) { p.vx -= 2 * vn * nx; p.vy -= 2 * vn * ny; }
+  p.x = c.x + nx * minDist; p.y = c.y + ny * minDist;
+  return true;
+}
+function playerHitRadius() { return tractorRemaining > 0 ? TRACTOR_HIT_RADIUS : PLAYER_HIT_RADIUS; }
 
 // 3단계부터: 홍게(암)와 청게(수)가 만나면 그 자리에 새끼 게 2마리
 function spawnBabies() {
@@ -670,6 +940,7 @@ function updateBabies(dt) {
 // 조이스틱을 놓고 서 있을 때도 적과 몸이 닿으면 목숨 감소
 function checkPlayerHit() {
   if (!gameRunning || paused) return false;
+  if (tractorRemaining > 0) { stompCrabsAt(player.x, player.y); return false; }
   for (const e of enemies) {
     if (Math.hypot(player.x - e.x, player.y - e.y) < BIG_CRAB_HIT_DIST) { loseLife(); return true; }
   }
@@ -680,6 +951,7 @@ function checkPlayerHit() {
 }
 
 function loseLife() {
+  if (tractorRemaining > 0) return;           // 트랙터는 무적
   lives--;
   document.getElementById('lives').textContent = lives;
   trail.forEach(([x,y]) => { if (board[y][x] === 2) board[y][x] = 0; });
@@ -745,6 +1017,8 @@ function startGame() {
 // 클리어 후 다음 단계: 요금 없음(STAGE_FEE = 0), 목숨 그대로, 판만 새로
 function nextStage() {
   stage++;
+  lives = Math.min(MAX_LIVES, lives + 1);      // 다음 단계로 가면 목숨 +1 (최대 MAX_LIVES)
+  document.getElementById('lives').textContent = lives;
   if (STAGE_FEE > 0) chargeFee(STAGE_FEE, 'stage');
   continueRemaining = 0; updateContinueUI();
   initBoard();
@@ -757,6 +1031,8 @@ function continueGame() {
   chargeFee(CONTINUE_FEE, 'continue');
   continueRemaining = 0; updateContinueUI();
   lives = 3; document.getElementById('lives').textContent = lives;
+  powerups = powerups.filter(p => p.kind !== 'jiju');   // 목숨이 2개 이상이면 지주 로고 없음
+  setTractor(0);
   trail.forEach(([x, y]) => { if (board[y][x] === 2) board[y][x] = 0; });
   trail = [];
   player.x = 0; player.y = Math.floor(GRID_H / 2);
@@ -779,6 +1055,7 @@ function gameLoop(ts) {
   effects = effects.filter(f => f.t < 1.0);
   if (gameRunning && !paused) {
     playTime += dt;
+    updateTractor(dt);
     movePlayer(dt);
     updateEnemies(dt);
     checkPlayerHit();
@@ -908,6 +1185,10 @@ history.pushState(null, '', '');
 canvas = document.getElementById('gameCanvas');
 ctx = canvas.getContext('2d');
 minimap = document.getElementById('minimap');
+// 로고 이미지 (없으면 drawPowerup이 캔버스 배지로 대신 그림)
+for (const [kind, src] of [['bidguard', 'assets/bidguard.png'], ['jiju', 'assets/jiju.png']]) {
+  const img = new Image(); img.src = src; logoImgs[kind] = img;
+}
 mctx = minimap.getContext('2d');
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));

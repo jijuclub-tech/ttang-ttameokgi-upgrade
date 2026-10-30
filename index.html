@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>일원 오락실 - 땅따먹기</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;background:#0b0620;color:#fff;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;overflow:hidden;touch-action:none}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+/* HUD */
+#hud{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:6px;padding:8px 10px;pointer-events:none;z-index:5;background:linear-gradient(#000a,#0000)}
+.hud-chip{background:linear-gradient(#2b1a5e,#150c33);border:2px solid #ffd54a;border-radius:12px;padding:3px 10px;font-weight:800;font-size:14px;box-shadow:0 0 8px #ffd54a88;text-shadow:0 0 6px #ff3df2;white-space:nowrap}
+.hud-chip small{display:block;font-size:9px;color:#ffd54a;letter-spacing:1px;text-shadow:none}
+#hud .grow{flex:1}
+#pause-btn{pointer-events:auto;cursor:pointer;color:#fff;font-weight:800;font-size:14px;font-family:inherit;background:linear-gradient(#ff7ae6,#a1189b);border:2px solid #ffd54a;border-radius:12px;padding:8px 12px;box-shadow:0 3px 0 #5a0a56,0 0 10px #ff3df2aa}
+#pause-btn:active{transform:translateY(2px);box-shadow:0 1px 0 #5a0a56}
+/* joystick */
+#joy-zone{position:fixed;left:0;right:0;bottom:0;height:42%;z-index:4;touch-action:none}
+#joy{position:absolute;width:110px;height:110px;border-radius:50%;border:3px solid #ffd54a99;background:radial-gradient(#ffffff22,#ffffff08);display:none;pointer-events:none;box-shadow:0 0 14px #ff3df266}
+#joy-knob{position:absolute;left:30px;top:30px;width:50px;height:50px;border-radius:50%;background:radial-gradient(#fff,#ff7ae6);box-shadow:0 0 12px #ff3df2}
+/* arcade overlays */
+.overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;background:radial-gradient(circle at 50% 30%,#3a1a7acc,#07031add);overflow:auto}
+.card{position:relative;width:min(92vw,380px);padding:22px 18px 20px;text-align:center;border-radius:22px;background:linear-gradient(160deg,#2a1466,#120833 70%);border:4px solid transparent;background-clip:padding-box;box-shadow:0 0 0 4px #ffd54a,0 0 0 7px #8a5a00,0 0 28px 8px #ff3df288,0 0 60px 10px #3df2ff44}
+.card::before,.card::after{content:"♦";position:absolute;top:-14px;color:#ffd54a;font-size:26px;text-shadow:0 0 10px #ffd54a}
+.card::before{left:18px}.card::after{right:18px}
+.crown{font-size:34px;filter:drop-shadow(0 0 8px #ffd54a);animation:bob 2s ease-in-out infinite}
+.arcade-name{font-size:12px;letter-spacing:4px;color:#3df2ff;text-shadow:0 0 8px #3df2ff}
+.title{margin:2px 0 4px;font-size:38px;font-weight:900;color:#ffe45e;-webkit-text-stroke:1.5px #7a2d00;text-shadow:0 3px 0 #b34700,0 0 18px #ff3df2,0 0 30px #ff3df2}
+.sub{font-size:13px;color:#d9c8ff;margin-bottom:10px}
+.stars{color:#ffd54a;letter-spacing:6px;text-shadow:0 0 8px #ffd54a;animation:twinkle 1.6s infinite}
+.iso{position:relative;height:96px;margin:6px auto 12px;perspective:400px}
+.iso-board{position:absolute;left:50%;top:50%;width:90px;height:90px;margin:-45px 0 0 -45px;transform:rotateX(58deg) rotateZ(45deg);display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:3px;background:#ffd54a;border-radius:6px;box-shadow:0 12px 0 #7a4a00,0 18px 18px #000a}
+.iso-board i{background:#7a4a1f;border-radius:2px}.iso-board i.g{background:#6bd24a}.iso-board i.b{background:#4aa3ff}
+.iso-crab{position:absolute;left:14%;top:6px;font-size:34px;animation:bob 1.4s ease-in-out infinite;filter:drop-shadow(0 0 6px #ff3df2)}
+.iso-farmer{position:absolute;right:14%;top:10px;font-size:34px;animation:bob 1.1s ease-in-out infinite}
+.btn{display:block;width:100%;margin:10px 0 0;padding:14px 10px;font-weight:900;font-size:18px;font-family:inherit;color:#fff;cursor:pointer;border-radius:16px;border:3px solid #ffd54a;letter-spacing:1px;text-shadow:0 2px 0 #0006;background:linear-gradient(#ff7ae6,#c01cb8 55%,#8a0f84);box-shadow:0 6px 0 #4d0549,0 0 16px #ff3df2aa,inset 0 2px 0 #ffffff66}
+.btn:active{transform:translateY(4px);box-shadow:0 2px 0 #4d0549,0 0 10px #ff3df2aa}
+.btn.start{font-size:26px;padding:16px 10px;background:linear-gradient(#ffe45e,#ffa800 55%,#d96a00);color:#4a1d00;text-shadow:0 1px 0 #fff8;animation:pulse 1.4s ease-in-out infinite;box-shadow:0 7px 0 #8a3f00,0 0 22px #ffd54acc,inset 0 3px 0 #fff9}
+.btn.alt{background:linear-gradient(#59e0ff,#1a9bd8 55%,#0e5f92);box-shadow:0 6px 0 #073a5a,0 0 16px #3df2ffaa,inset 0 2px 0 #ffffff66}
+.btn.dark{background:linear-gradient(#6c6c8c,#3b3b57 55%,#25253a);box-shadow:0 6px 0 #12121f,inset 0 2px 0 #ffffff44}
+.menu-title{font-size:26px;font-weight:900;color:#ffe45e;text-shadow:0 0 14px #ff3df2;margin:4px 0 2px}
+.result-line{font-size:15px;color:#e8dcff;margin:4px 0}
+.fee-line{margin-top:12px;font-size:12px;color:#ffd54a}
+.tips{margin-top:10px;font-size:11px;color:#b9a6ee;line-height:1.5}
+@keyframes bob{50%{transform:translateY(-6px)}}
+@keyframes twinkle{50%{opacity:.45}}
+@keyframes pulse{50%{transform:scale(1.04)}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="hud-chip"><small>점령</small><span id="percent">0.0%</span></div>
+  <div class="hud-chip"><small>목표</small>75%</div>
+  <div class="hud-chip"><small>목숨</small><span id="lives">♥♥♥</span></div>
+  <div class="hud-chip"><small>단계</small><span id="stage">1</span></div>
+  <div class="hud-chip"><small>요금</small><span id="fee">0.1p</span></div>
+  <div class="grow"></div>
+  <button id="pause-btn" type="button">⏸ 멈추기</button>
+</div>
+
+<div id="joy-zone"><div id="joy"><div id="joy-knob"></div></div></div>
+
+<!-- 메인 메뉴 -->
+<div id="main-menu" class="overlay">
+  <div class="card">
+    <div class="crown">👑</div>
+    <div class="arcade-name">★ 일원 오락실 ★</div>
+    <div class="title">땅따먹기</div>
+    <div class="stars">★ ◆ ★ ◆ ★</div>
+    <div class="iso">
+      <div class="iso-board"><i class="g"></i><i class="g"></i><i></i><i></i><i class="g"></i><i class="g"></i><i class="b"></i><i></i><i class="g"></i><i class="b"></i><i class="b"></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="iso-farmer">🧑‍🌾</div><div class="iso-crab">🦀</div>
+    </div>
+    <div class="sub">고랑을 파서 땅을 차지하고 풍경을 되찾아라!<br>홍게(수컷)·청게(암컷)를 조심!</div>
+    <button id="start-btn" class="btn start" type="button">GAME START</button>
+    <div class="tips">화면을 누르고 끌어서 이동 · 키보드 방향키 / WASD<br>목표 점령률 75% · 게에게 고랑이 닿으면 목숨 -1</div>
+  </div>
+</div>
+
+<!-- 멈추기 메뉴 -->
+<div id="pause-menu" class="overlay hidden">
+  <div class="card">
+    <div class="crown">⏸</div>
+    <div class="menu-title">잠깐 멈춤</div>
+    <div class="stars">◆ ◆ ◆</div>
+    <button id="resume-btn" class="btn start" type="button">계속하기</button>
+    <button id="newgame-btn" class="btn alt" type="button">새 게임</button>
+    <button id="exit-btn" class="btn dark" type="button">나가기</button>
+  </div>
+</div>
+
+<!-- 나가기 확인 -->
+<div id="confirm-menu" class="overlay hidden">
+  <div class="card">
+    <div class="menu-title">정말 나갈까요?</div>
+    <div class="sub">진행 중인 판은 사라집니다.</div>
+    <button id="confirm-no" class="btn start" type="button">계속하기</button>
+    <button id="confirm-yes" class="btn dark" type="button">나가기</button>
+  </div>
+</div>
+
+<!-- 결과 -->
+<div id="result-menu" class="overlay hidden">
+  <div class="card">
+    <div class="crown" id="result-icon">🏆</div>
+    <div class="menu-title" id="result-title">스테이지 클리어!</div>
+    <div class="result-line" id="result-percent">점령 0.0%</div>
+    <div class="stars">★ ★ ★</div>
+    <button id="next-stage-btn" class="btn start" type="button" style="display:none">다음 단계</button>
+    <button id="continue-btn" class="btn alt" type="button" style="display:none">이어서 하기</button>
+    <button id="result-new-btn" class="btn" type="button">새 게임</button>
+    <button id="result-menu-btn" class="btn dark" type="button">메뉴로</button>
+    <div class="fee-line">현재 요금 <span id="result-fee">0.1p</span></div>
+  </div>
+</div>
+
+<script>
+// ===== 게임 로직 (DOM 이벤트·그리기 연결 전까지. tests/game_logic_test.js 가 이 부분만 실행) =====
+const W = 28, H = 36;
+const START = { x: 0, y: 18 };
+const GOAL_PERCENT = 75;
+const PLAYER_SPEED = 5.2;
+const MAX_LIVES = 5;
+const GAME_FEE = 0.1, STAGE_FEE = 0, CONTINUE_FEE = 0.1, CONTINUE_SECONDS = 30;
+const CRAB_DRAW_SCALE = 1.4, PLAYER_DRAW_SCALE = 1.6, BABY_SCALE = 0.7;
+const BIG_CRAB_HIT_RADIUS = 0.32 * CRAB_DRAW_SCALE * 0.8;
+const BABY_HIT_RADIUS = BIG_CRAB_HIT_RADIUS * BABY_SCALE;
+const PLAYER_HIT_RADIUS = 0.18 * PLAYER_DRAW_SCALE * 0.95;
+const BIG_CRAB_HIT_DIST = BIG_CRAB_HIT_RADIUS + PLAYER_HIT_RADIUS;
+const BABY_HIT_DIST = BABY_HIT_RADIUS + PLAYER_HIT_RADIUS;
+const CRAB_MEET_DIST = BIG_CRAB_HIT_RADIUS * 2;
+const FURROW_WIDTH = 0.35;
+const TRACTOR_SECONDS = 30, TRACTOR_HIT_RADIUS = 0.5;
+const POWERUP_RADIUS = 0.7;
+const BIDGUARD_FIRST_DELAY = 5, BIDGUARD_RESPAWN = 25;
+const CRAB_RESPAWN_SECONDS = 5;
+const BIRTH_COOLDOWN = 10, MAX_BABIES = 8, BABY_FIRST_STAGE = 3;
+const BABY_COLORS = ['#facc15', '#22c55e', '#a855f7', '#f97316', '#ec4899', '#14b8a6'];
+const INTERIOR_CELLS = (W - 2) * (H - 2);
+
+const els = {};
+const $ = id => (els[id] = els[id] || document.getElementById(id));
+
+let board = [], claimStamp = [], trail = [];
+let player = { x: START.x, y: START.y, type: 'farmer', dx: 1, dy: 0, moving: false };
+let enemies = [], babies = [], powerups = [], effects = [], crabRespawns = [];
+let stage = 1, lives = 3, playTime = 0, animTime = 0, walkPhase = 0;
+let gameRunning = false, paused = false;
+let feeTenths = 0, continueMs = 0, continueRemaining = 0;
+let tractorRemaining = 0, bidguardNextAt = BIDGUARD_FIRST_DELAY, lastBirthAt = -Infinity;
+let viewW = 0, viewH = 0;
+let lastTime = null;
+const cam = { x: 0, y: 0 };
+const joystick = { active: false, nx: 0, ny: 0 };
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const inBounds = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+
+// ----- 화면 요소 보이기/숨기기 -----
+function showEl(id) { $(id).classList.remove('hidden'); }
+function hideEl(id) { $(id).classList.add('hidden'); }
+function hideAllOverlays() { ['main-menu', 'pause-menu', 'confirm-menu', 'result-menu'].forEach(hideEl); }
+
+// ----- 요금 -----
+function formatFee(tenths) { return (tenths / 10).toFixed(1) + 'p'; }
+function showFee() { $('fee').textContent = formatFee(feeTenths); $('result-fee').textContent = formatFee(feeTenths); }
+function chargeFee(amount) { feeTenths += Math.round(amount * 10); showFee(); }
+
+// ----- 점령률 (소수점 한 자리, 내림해서 99.98%가 100%로 보이지 않게) -----
+function calcPercent() {
+  let c = 0;
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (board[y][x] === 1) c++;
+  return c * 100 / INTERIOR_CELLS;
+}
+function formatPercent(p) {
+  const v = p >= 100 ? 100 : Math.floor(p * 10 + 1e-9) / 10;
+  return v.toFixed(1) + '%';
+}
+function updateHud() {
+  $('percent').textContent = formatPercent(calcPercent());
+  $('lives').textContent = lives > 0 ? '♥'.repeat(lives) : '-';
+  $('stage').textContent = String(stage);
+}
+
+// ----- 카메라 -----
+function cameraTarget(px, py, vw, vh) {
+  const axis = (p, v, size) => v >= size ? (size - v) / 2 : clamp(p + 0.5 - v / 2, 0, size - v);
+  return { x: axis(px, vw, W), y: axis(py, vh, H) };
+}
+function snapCamera() { const t = cameraTarget(player.x, player.y, viewW, viewH); cam.x = t.x; cam.y = t.y; }
+function updateCamera(dt) {
+  const t = cameraTarget(player.x, player.y, viewW, viewH);
+  const k = 1 - Math.exp(-dt * 6);
+  cam.x += (t.x - cam.x) * k; cam.y += (t.y - cam.y) * k;
+}
+
+// ----- 효과 -----
+function addEffect(text, x, y) { effects.push({ text, x, y, t: 0, life: 0.9 }); }
+function updateEffects(dt) {
+  effects.forEach(e => { e.t += dt; });
+  effects = effects.filter(e => e.t < e.life);
+}
+
+// ----- 게 -----
+function crabSpeed() { return Math.min(3.6, 1.8 + 0.25 * (stage - 1)); }
+function makeCrab(type, x, y, speed) {
+  const a = Math.PI / 7 + Math.random() * (Math.PI * 2);
+  return { x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, type, sex: type === 'red' ? 'male' : 'female', legPhase: 0 };
+}
+function makeBaby(x, y, color) {
+  const a = Math.random() * Math.PI * 2, s = 1.5;
+  return { x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, type: 'baby', color, scale: BABY_SCALE, legPhase: 0 };
+}
+function findFreeCell(minDist, margin) {
+  const ok = (x, y, m) => {
+    for (let j = -m; j <= m; j++) for (let i = -m; i <= m; i++) {
+      if (!inBounds(x + i, y + j) || board[y + j][x + i] !== 0) return false;
+    }
+    return Math.hypot(x - player.x, y - player.y) >= minDist;
+  };
+  for (let m = margin; m >= 0; m--) {
+    for (let n = 0; n < 400; n++) {
+      const x = 1 + Math.floor(Math.random() * (W - 2)), y = 1 + Math.floor(Math.random() * (H - 2));
+      if (ok(x, y, m)) return { x, y };
+    }
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (ok(x, y, m)) return { x, y };
+  }
+  return null;
+}
+
+// 동그라미(중심 e, 반지름 r)이 내 땅(또는 판 밖) 칸에 겹치면 밀어내고 튕긴다
+function bounceOff(e, r) {
+  let hit = false;
+  const x0 = Math.floor(e.x - r + 0.5), x1 = Math.floor(e.x + r + 0.5);
+  const y0 = Math.floor(e.y - r + 0.5), y1 = Math.floor(e.y + r + 0.5);
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+    if (inBounds(cx, cy) && board[cy][cx] !== 1) continue;
+    const qx = clamp(e.x, cx - 0.5, cx + 0.5), qy = clamp(e.y, cy - 0.5, cy + 0.5);
+    const dx = e.x - qx, dy = e.y - qy, d2 = dx * dx + dy * dy;
+    if (d2 >= r * r) continue;
+    let nx, ny, pen;
+    if (d2 > 1e-12) { const d = Math.sqrt(d2); nx = dx / d; ny = dy / d; pen = r - d; }
+    else {
+      const dl = e.x - (cx - 0.5), dr = cx + 0.5 - e.x, du = e.y - (cy - 0.5), dd = cy + 0.5 - e.y;
+      const m = Math.min(dl, dr, du, dd);
+      nx = 0; ny = 0;
+      if (m === dl) nx = -1; else if (m === dr) nx = 1; else if (m === du) ny = -1; else ny = 1;
+      pen = m + r;
+    }
+    e.x += nx * pen; e.y += ny * pen;
+    const vn = e.vx * nx + e.vy * ny;
+    if (vn < 0) { e.vx -= 2 * vn * nx; e.vy -= 2 * vn * ny; }
+    hit = true;
+  }
+  return hit;
+}
+function circleBounce(p, o, rr) {
+  const dx = p.x - o.x, dy = p.y - o.y, d = Math.hypot(dx, dy);
+  if (d >= rr) return false;
+  const nx = d < 1e-6 ? 1 : dx / d, ny = d < 1e-6 ? 0 : dy / d;
+  p.x = o.x + nx * rr; p.y = o.y + ny * rr;
+  const vn = p.vx * nx + p.vy * ny;
+  if (vn < 0) { p.vx -= 2 * vn * nx; p.vy -= 2 * vn * ny; }
+  return true;
+}
+function moveCrab(e, dt, r) {
+  e.x += e.vx * dt; e.y += e.vy * dt;
+  if (e.vx || e.vy) {
+    bounceOff(e, r);
+    e.legPhase = (e.legPhase || 0) + dt * Math.hypot(e.vx, e.vy) * 5;
+  }
+}
+
+// ----- 고랑(가는 선) -----
+function furrowSegments() {
+  if (!trail.length) return [];
+  const pts = trail.map(c => [c[0], c[1]]);
+  const [fx, fy] = trail[0];
+  const order = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+  for (const [ox, oy] of order) {
+    const nx = fx + ox, ny = fy + oy;
+    if (inBounds(nx, ny) && board[ny][nx] === 1) { pts.unshift([fx + ox / 2, fy + oy / 2]); break; }
+  }
+  const last = trail[trail.length - 1];
+  if (Math.hypot(player.x - last[0], player.y - last[1]) < 1.6) pts.push([player.x, player.y]);
+  if (pts.length === 1) return [[pts[0], pts[0]]];
+  const segs = [];
+  for (let i = 0; i + 1 < pts.length; i++) segs.push([pts[i], pts[i + 1]]);
+  return segs;
+}
+function distToSegment(px, py, a, b) {
+  const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy;
+  const t = l2 ? clamp(((px - a[0]) * vx + (py - a[1]) * vy) / l2, 0, 1) : 0;
+  return Math.hypot(px - (a[0] + vx * t), py - (a[1] + vy * t));
+}
+function crabTouchesTrail(e) {
+  const lim = BIG_CRAB_HIT_RADIUS + FURROW_WIDTH / 2;
+  return furrowSegments().some(s => distToSegment(e.x, e.y, s[0], s[1]) < lim);
+}
+function bigCrabOnTrail() {
+  if (tractorRemaining > 0 || !trail.length) return false;
+  return enemies.some(crabTouchesTrail);
+}
+function clearTrail() {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (board[y][x] === 2) board[y][x] = 0;
+  trail.length = 0;
+}
+
+// ----- 판 -----
+function initBoard() {
+  board = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => (x === 0 || y === 0 || x === W - 1 || y === H - 1) ? 1 : 0));
+  claimStamp = Array.from({ length: H }, () => new Array(W).fill(-100));
+  trail = []; babies = []; effects = []; powerups = []; crabRespawns = [];
+  playTime = 0; bidguardNextAt = BIDGUARD_FIRST_DELAY; lastBirthAt = -Infinity;
+  player = { x: START.x, y: START.y, type: 'farmer', dx: 1, dy: 0, moving: false };
+  tractorRemaining = 0;
+  const sp = crabSpeed();
+  enemies = [makeCrab('red', 20, 10, sp), makeCrab('blue', 8, 28, sp)];
+  snapCamera();
+  updateHud();
+}
+
+function claimArea() {
+  const seen = Array.from({ length: H }, () => new Array(W).fill(false));
+  const stack = [];
+  const seed = (x, y) => { if (inBounds(x, y) && board[y][x] === 0 && !seen[y][x]) { seen[y][x] = true; stack.push([x, y]); } };
+  for (const e of enemies) {
+    const cx = Math.round(e.x), cy = Math.round(e.y);
+    if (!inBounds(cx, cy)) continue;
+    if (board[cy][cx] === 0) seed(cx, cy);
+    else { seed(cx + 1, cy); seed(cx - 1, cy); seed(cx, cy + 1); seed(cx, cy - 1); }
+  }
+  const hasSeeds = stack.length > 0;
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    seed(x + 1, y); seed(x - 1, y); seed(x, y + 1); seed(x, y - 1);
+  }
+  const fresh = Array.from({ length: H }, () => new Array(W).fill(false));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const v = board[y][x];
+    if (v === 2 || (v === 0 && hasSeeds && !seen[y][x])) { board[y][x] = 1; fresh[y][x] = true; claimStamp[y][x] = playTime; }
+  }
+  babies = babies.filter(b => {
+    const cx = Math.round(b.x), cy = Math.round(b.y);
+    if (inBounds(cx, cy) && fresh[cy][cx]) { addEffect('+', b.x, b.y); return false; }
+    return true;
+  });
+  trail.length = 0;
+  updateHud();
+}
+
+function finishTrail() {
+  if (bigCrabOnTrail()) { loseLife(); return false; }
+  claimArea();
+  if (calcPercent() >= GOAL_PERCENT) { gameOver(true); return false; }
+  return true;
+}
+
+function movePlayer(dt) {
+  player.moving = false;
+  if (joystick.active) {
+    const m = Math.hypot(joystick.nx, joystick.ny);
+    if (m > 0.001) {
+      const ux = joystick.nx / m, uy = joystick.ny / m;
+      player.dx = ux; player.dy = uy; player.moving = true;
+      let remain = PLAYER_SPEED * dt;
+      while (remain > 1e-9 && gameRunning) {
+        const s = Math.min(remain, 0.25); remain -= s;
+        const pcx = Math.round(player.x), pcy = Math.round(player.y);
+        player.x = clamp(player.x + ux * s, 0, W - 1);
+        player.y = clamp(player.y + uy * s, 0, H - 1);
+        const cx = Math.round(player.x), cy = Math.round(player.y);
+        if (cx === pcx && cy === pcy) continue;
+        const v = board[cy][cx];
+        if (v === 0) { board[cy][cx] = 2; trail.push([cx, cy]); }
+        else if (v === 1 && trail.length > 0) { if (!finishTrail()) break; }
+      }
+    }
+  }
+  checkPlayerHit();
+}
+
+// ----- 목숨 / 충돌 -----
+function loseLife() {
+  lives = Math.max(0, lives - 1);
+  clearTrail();
+  player.x = START.x; player.y = START.y; player.moving = false;
+  updateHud();
+  if (lives <= 0) gameOver(false);
+}
+function checkPlayerHit() {
+  if (!gameRunning) return false;
+  const d = o => Math.hypot(o.x - player.x, o.y - player.y);
+  if (tractorRemaining > 0) {
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (d(e) < TRACTOR_HIT_RADIUS + BIG_CRAB_HIT_RADIUS) {
+        enemies.splice(i, 1);
+        crabRespawns.push({ type: e.type, at: playTime + CRAB_RESPAWN_SECONDS });
+        addEffect('펑!', e.x, e.y);
+      }
+    }
+    for (let i = babies.length - 1; i >= 0; i--) {
+      const b = babies[i];
+      if (d(b) < TRACTOR_HIT_RADIUS + BABY_HIT_RADIUS) { babies.splice(i, 1); addEffect('펑!', b.x, b.y); }
+    }
+    return false;
+  }
+  if (enemies.some(e => d(e) < BIG_CRAB_HIT_DIST) || babies.some(b => d(b) < BABY_HIT_DIST)) { loseLife(); return true; }
+  return false;
+}
+
+function updateEnemies(dt) {
+  enemies.forEach(e => moveCrab(e, dt, BIG_CRAB_HIT_RADIUS));
+  babies.forEach(b => moveCrab(b, dt, BABY_HIT_RADIUS));
+  for (let i = crabRespawns.length - 1; i >= 0; i--) {
+    const r = crabRespawns[i];
+    if (playTime < r.at) continue;
+    const c = findFreeCell(8, 1);
+    if (c) { enemies.push(makeCrab(r.type, c.x, c.y, crabSpeed())); crabRespawns.splice(i, 1); }
+    else r.at = playTime + 1;
+  }
+  if (stage >= BABY_FIRST_STAGE && babies.length < MAX_BABIES && playTime - lastBirthAt >= BIRTH_COOLDOWN) {
+    const reds = enemies.filter(e => e.type === 'red'), blues = enemies.filter(e => e.type === 'blue');
+    for (const a of reds) {
+      const b = blues.find(o => Math.hypot(a.x - o.x, a.y - o.y) < CRAB_MEET_DIST);
+      if (!b) continue;
+      const n = Math.min(2, MAX_BABIES - babies.length);
+      const colors = BABY_COLORS.slice().sort(() => Math.random() - 0.5);
+      for (let i = 0; i < n; i++) babies.push(makeBaby((a.x + b.x) / 2, (a.y + b.y) / 2, colors[i]));
+      lastBirthAt = playTime;
+      break;
+    }
+  }
+  if (bigCrabOnTrail()) loseLife();
+}
+
+// ----- 아이템 / 트랙터 -----
+function setTractor(sec) { tractorRemaining = sec; player.type = sec > 0 ? 'tractor' : 'farmer'; }
+function activateTractor() { setTractor(TRACTOR_SECONDS); }
+function playerSpriteType() {
+  if (tractorRemaining <= 0) return 'farmer';
+  if (tractorRemaining >= 5) return 'tractor';
+  const farmerShare = (5 - tractorRemaining) / 5;
+  return (animTime * 4) % 1 < farmerShare ? 'farmer' : 'tractor';
+}
+function spawnPowerup(kind) {
+  const c = findFreeCell(6, 2);
+  if (!c) return null;
+  const a = Math.random() * Math.PI * 2;
+  const p = { kind, x: c.x, y: c.y, vx: Math.cos(a) * 1.3, vy: Math.sin(a) * 1.3, angle: 0 };
+  powerups.push(p);
+  return p;
+}
+function updatePowerups(dt) {
+  if (lives >= 2) powerups = powerups.filter(p => p.kind !== 'jiju');
+  const has = k => powerups.some(p => p.kind === k);
+  if (tractorRemaining <= 0) {
+    if (!has('bidguard') && playTime >= bidguardNextAt) spawnPowerup('bidguard');
+    if (lives === 1 && !has('jiju')) spawnPowerup('jiju');
+  }
+  for (const p of powerups) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.angle += Math.hypot(p.vx, p.vy) / POWERUP_RADIUS * dt * (p.vx < 0 ? -1 : 1);
+    bounceOff(p, POWERUP_RADIUS);
+    enemies.forEach(e => circleBounce(p, e, POWERUP_RADIUS + BIG_CRAB_HIT_RADIUS));
+    babies.forEach(b => circleBounce(p, b, POWERUP_RADIUS + BABY_HIT_RADIUS));
+  }
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const p = powerups[i];
+    if (Math.hypot(p.x - player.x, p.y - player.y) < POWERUP_RADIUS + PLAYER_HIT_RADIUS) {
+      powerups.splice(i, 1);
+      if (p.kind === 'bidguard') bidguardNextAt = playTime + BIDGUARD_RESPAWN;
+      activateTractor();
+    }
+  }
+}
+
+// ----- 진행 -----
+function syncContinue() {
+  continueRemaining = continueMs / 1000;
+  const btn = $('continue-btn');
+  if (continueMs > 0) {
+    btn.style.display = 'block';
+    btn.textContent = '이어서 하기 (+' + formatFee(CONTINUE_FEE * 10) + ') ' + Math.ceil(continueRemaining) + '초';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+function startGame() {
+  stage = 1; lives = 3; feeTenths = 0; chargeFee(GAME_FEE);
+  continueMs = 0; syncContinue();
+  $('next-stage-btn').style.display = 'none';
+  paused = false;
+  initBoard();
+  gameRunning = true;
+  hideAllOverlays();
+}
+function nextStage() {
+  stage++;
+  lives = Math.min(MAX_LIVES, lives + 1);
+  chargeFee(STAGE_FEE);
+  continueMs = 0; syncContinue();
+  $('next-stage-btn').style.display = 'none';
+  paused = false;
+  initBoard();
+  gameRunning = true;
+  hideAllOverlays();
+}
+function gameOver(win) {
+  gameRunning = false;
+  joystick.active = false;
+  const pct = formatPercent(calcPercent());
+  $('result-percent').textContent = '점령 ' + pct + ' · ' + stage + '단계';
+  $('result-title').textContent = win ? '스테이지 클리어!' : '게임 오버';
+  $('result-icon').textContent = win ? '🏆' : '💀';
+  $('next-stage-btn').style.display = win ? 'block' : 'none';
+  continueMs = win ? 0 : CONTINUE_SECONDS * 1000;
+  syncContinue();
+  showFee();
+  showEl('result-menu');
+}
+function continueGame() {
+  if (gameRunning || lives > 0 || continueMs <= 0) return false;
+  chargeFee(CONTINUE_FEE);
+  lives = 3;
+  clearTrail();
+  player.x = START.x; player.y = START.y;
+  powerups = powerups.filter(p => p.kind !== 'jiju');
+  continueMs = 0; syncContinue();
+  gameRunning = true; paused = false;
+  hideAllOverlays();
+  updateHud();
+  return true;
+}
+const continueGameRef = continueGame;
+
+function pauseGame() { if (!gameRunning || paused) return; paused = true; joystick.active = false; showEl('pause-menu'); }
+function resumeGame() { paused = false; hideAllOverlays(); }
+function exitToMenu() { gameRunning = false; paused = false; joystick.active = false; hideAllOverlays(); initBoard(); showEl('main-menu'); }
+
+function gameLoop(ts) {
+  let dtMs = lastTime === null ? 16 : ts - lastTime;
+  if (dtMs < 0) dtMs = 0;
+  lastTime = ts;
+  const dt = Math.min(dtMs / 1000, 0.05);
+  animTime = (animTime + dt) % 1;
+  if (gameRunning && !paused) {
+    playTime += dt;
+    if (player.moving) walkPhase += dt * 12;
+    movePlayer(dt);
+    if (gameRunning) updateEnemies(dt);
+    if (gameRunning) updatePowerups(dt);
+    if (gameRunning) checkPlayerHit();
+    if (tractorRemaining > 0) setTractor(Math.max(0, tractorRemaining - dt));
+    updateEffects(dt);
+  } else if (!gameRunning && continueMs > 0) {
+    continueMs = Math.max(0, continueMs - dtMs);
+    syncContinue();
+  }
+  updateCamera(dt);
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ===== 입력 / 그리기 (브라우저 전용) =====
+const joyEl = document.getElementById('joy'), joyKnob = document.getElementById('joy-knob'), joyZone = document.getElementById('joy-zone');
+const canvas = document.getElementById('game');
+const g = canvas.getContext('2d');
+let cell = 32, cssW = 0, cssH = 0;
+const TILE = 32;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  cssW = window.innerWidth; cssH = window.innerHeight;
+  canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cell = Math.max(22, Math.floor(Math.min(cssW / 10, cssH / 14)));
+  viewW = cssW / cell; viewH = cssH / cell;
+  snapCamera();
+}
+window.addEventListener('resize', resize);
+
+// 조이스틱 (누르고 끌기)
+let joyId = null, joyOrigin = null;
+const JOY_R = 50;
+function joyMove(e) {
+  const dx = e.clientX - joyOrigin.x, dy = e.clientY - joyOrigin.y, d = Math.hypot(dx, dy);
+  const k = d > JOY_R ? JOY_R / d : 1;
+  joyKnob.style.left = (30 + dx * k) + 'px'; joyKnob.style.top = (30 + dy * k) + 'px';
+  if (d < 10) { joystick.active = false; return; }
+  joystick.active = true; joystick.nx = dx / d; joystick.ny = dy / d;
+}
+joyZone.addEventListener('pointerdown', e => {
+  if (joyId !== null) return;
+  joyId = e.pointerId; joyOrigin = { x: e.clientX, y: e.clientY };
+  joyEl.style.display = 'block'; joyEl.style.left = (e.clientX - 55) + 'px'; joyEl.style.top = (e.clientY - 55 - (window.innerHeight - joyZone.offsetHeight)) + 'px';
+  joyKnob.style.left = '30px'; joyKnob.style.top = '30px';
+  joyZone.setPointerCapture(e.pointerId);
+});
+joyZone.addEventListener('pointermove', e => { if (e.pointerId === joyId) joyMove(e); });
+const joyEnd = e => { if (e.pointerId !== joyId) return; joyId = null; joystick.active = false; joyEl.style.display = 'none'; };
+joyZone.addEventListener('pointerup', joyEnd);
+joyZone.addEventListener('pointercancel', joyEnd);
+
+// 키보드
+const keys = {};
+function keyJoy() {
+  const nx = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0);
+  const ny = (keys.ArrowDown || keys.s ? 1 : 0) - (keys.ArrowUp || keys.w ? 1 : 0);
+  if (nx || ny) { joystick.active = true; joystick.nx = nx; joystick.ny = ny; } else if (joyId === null) joystick.active = false;
+}
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' || e.key === 'p') { if (paused) resumeGame(); else pauseGame(); return; }
+  keys[e.key] = true; keyJoy();
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; keyJoy(); });
+
+// 버튼
+const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
+on('start-btn', startGame);
+on('pause-btn', pauseGame);
+on('resume-btn', resumeGame);
+on('newgame-btn', startGame);
+on('exit-btn', () => { hideEl('pause-menu'); showEl('confirm-menu'); });
+on('confirm-no', () => { hideEl('confirm-menu'); showEl('pause-menu'); });
+on('confirm-yes', exitToMenu);
+on('next-stage-btn', nextStage);
+on('continue-btn', continueGame);
+on('result-new-btn', startGame);
+on('result-menu-btn', exitToMenu);
+
+// 이미지
+const imgs = {};
+['bidguard', 'jiju'].forEach(n => { const im = new Image(); im.src = 'assets/' + n + '.png'; imgs[n] = im; });
+
+// ----- 풍경 / 흙 (미리 그려 둠) -----
+function makeScene() {
+  const c = document.createElement('canvas'); c.width = W * TILE; c.height = H * TILE;
+  const s = c.getContext('2d'); const w = c.width, h = c.height;
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const sky = s.createLinearGradient(0, 0, 0, h * 0.28); sky.addColorStop(0, '#5ec8ff'); sky.addColorStop(1, '#d8f3ff');
+  s.fillStyle = sky; s.fillRect(0, 0, w, h * 0.3);
+  s.fillStyle = '#fff6a8'; s.beginPath(); s.arc(w * 0.8, h * 0.07, 40, 0, 7); s.fill();
+  s.fillStyle = '#ffffffcc';
+  for (let i = 0; i < 6; i++) { const x = rnd() * w, y = rnd() * h * 0.15 + 20; for (let k = 0; k < 4; k++) { s.beginPath(); s.ellipse(x + k * 22, y + (k % 2) * 6, 30, 14, 0, 0, 7); s.fill(); } }
+  s.fillStyle = '#6fae7a'; s.beginPath(); s.moveTo(0, h * 0.3);
+  for (let x = 0; x <= w; x += 40) s.lineTo(x, h * 0.24 + Math.sin(x / 90) * 26); s.lineTo(w, h * 0.3); s.fill();
+  const field = s.createLinearGradient(0, h * 0.28, 0, h); field.addColorStop(0, '#9be06a'); field.addColorStop(1, '#4fa23a');
+  s.fillStyle = field; s.fillRect(0, h * 0.28, w, h * 0.72);
+  for (let y = h * 0.32; y < h; y += 34) { s.fillStyle = (Math.floor(y / 34) % 2) ? '#7cc94f55' : '#2f8a2d44'; s.fillRect(0, y, w, 17); }
+  s.fillStyle = '#4ab4ff'; s.beginPath(); s.moveTo(0, h * 0.62);
+  for (let x = 0; x <= w; x += 30) s.lineTo(x, h * 0.62 + Math.sin(x / 60) * 20); for (let x = w; x >= 0; x -= 30) s.lineTo(x, h * 0.62 + 50 + Math.sin(x / 60) * 20); s.fill();
+  s.fillStyle = '#d33'; s.fillRect(w * 0.18, h * 0.36, 90, 56); s.fillStyle = '#7a3b1e'; s.beginPath(); s.moveTo(w * 0.18 - 10, h * 0.36); s.lineTo(w * 0.18 + 45, h * 0.36 - 40); s.lineTo(w * 0.18 + 100, h * 0.36); s.fill();
+  s.fillStyle = '#ffe9a8'; s.fillRect(w * 0.18 + 35, h * 0.36 + 20, 20, 36);
+  for (let i = 0; i < 26; i++) { const x = rnd() * w, y = h * 0.3 + rnd() * h * 0.7; s.fillStyle = '#6b4a2b'; s.fillRect(x - 3, y, 6, 22); s.fillStyle = ['#2e8b3a', '#3da34a', '#e8a33a'][i % 3]; s.beginPath(); s.arc(x, y, 20, 0, 7); s.fill(); }
+  for (let i = 0; i < 260; i++) { s.fillStyle = ['#ff6b9d', '#ffd23f', '#fff'][i % 3]; s.beginPath(); s.arc(rnd() * w, h * 0.3 + rnd() * h * 0.7, 2.5, 0, 7); s.fill(); }
+  return c;
+}
+function makeSoil() {
+  const c = document.createElement('canvas'); c.width = W * TILE; c.height = H * TILE;
+  const s = c.getContext('2d');
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  s.fillStyle = '#7a4a28'; s.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < 9000; i++) { s.fillStyle = ['#5e3719', '#946036', '#6b4122', '#a8764a'][i % 4]; s.fillRect(rnd() * c.width, rnd() * c.height, 2 + rnd() * 4, 2 + rnd() * 3); }
+  return c;
+}
+const sceneCanvas = makeScene(), soilCanvas = makeSoil();
+
+// ----- 그리기 도구 -----
+const sx = x => (x + 0.5 - cam.x) * cell, sy = y => (y + 0.5 - cam.y) * cell;
+function ell(cx, cy, rx, ry, rot) { g.beginPath(); g.ellipse(cx, cy, rx, ry, rot || 0, 0, Math.PI * 2); }
+
+function drawCrab(x, y, o) {
+  const u = cell * CRAB_DRAW_SCALE * (o.scale || 1);
+  const male = o.sex === 'male', baby = o.type === 'baby';
+  const shell = baby ? o.color : (male ? '#e63946' : '#1d4ed8');
+  const dark = baby ? '#00000066' : (male ? '#8f0d1a' : '#10286e');
+  const light = baby ? '#ffffffaa' : (male ? '#ff9aa2' : '#8ab6ff');
+  g.save(); g.translate(x, y); g.scale(u, u);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.fillStyle = '#0003'; ell(0, 0.2, 0.36, 0.1); g.fill();
+  const ph = o.legPhase || 0;
+  g.strokeStyle = dark; g.lineWidth = 0.05;
+  for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 3; i++) {
+    const a = Math.sin(ph + i * 1.3 + (side > 0 ? Math.PI : 0)) * 0.12;
+    const bx = side * 0.22, by = -0.02 + i * 0.09;
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(side * (0.38 + a), by - 0.1 + a * 0.5); g.lineTo(side * (0.5 + a), by + 0.12); g.stroke();
+  }
+  // 집게: 수컷은 크게, 암컷·새끼는 작게
+  const cs = baby ? 0.5 : (male ? 1.0 : 0.45);
+  const open = (Math.sin(ph * 0.7 + 1) + 1) * 0.12 * cs + 0.05;
+  for (let side = -1; side <= 1; side += 2) {
+    const ax = side * 0.3, ay = -0.12;
+    const hx = side * (0.36 + 0.08 * cs), hy = -0.34 - 0.12 * cs;
+    g.strokeStyle = shell; g.lineWidth = 0.07 * (0.6 + 0.4 * cs);
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(side * 0.42, -0.22); g.lineTo(hx, hy); g.stroke();
+    for (let k = -1; k <= 1; k += 2) {
+      g.save(); g.translate(hx, hy); g.rotate(k * open * 2.2 + side * 0.15);
+      g.fillStyle = shell; g.strokeStyle = dark; g.lineWidth = 0.02;
+      g.beginPath(); g.moveTo(-0.07 * cs, 0); g.quadraticCurveTo(-0.17 * cs, -0.16 * cs, 0, -0.3 * cs); g.quadraticCurveTo(0.17 * cs, -0.16 * cs, 0.07 * cs, 0); g.closePath(); g.fill(); g.stroke();
+      g.restore();
+    }
+    g.fillStyle = shell; ell(hx, hy + 0.02, 0.09 * cs + 0.02, 0.08 * cs + 0.02); g.fill(); g.stroke();
+  }
+  const gr = g.createRadialGradient(-0.08, -0.08, 0.03, 0, 0, 0.34);
+  gr.addColorStop(0, light); gr.addColorStop(0.35, shell); gr.addColorStop(1, dark);
+  g.fillStyle = gr; g.strokeStyle = dark; g.lineWidth = 0.03;
+  ell(0, 0, 0.32, 0.22); g.fill(); g.stroke();
+  if (!baby) {
+    g.fillStyle = dark;
+    if (male) { for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 0.1 - 0.03, -0.18 + Math.abs(i) * 0.02); g.lineTo(i * 0.1, -0.27 + Math.abs(i) * 0.03); g.lineTo(i * 0.1 + 0.03, -0.18 + Math.abs(i) * 0.02); g.fill(); } }
+    else {
+      g.fillStyle = '#ffffff99'; for (let i = -1; i <= 1; i++) { ell(i * 0.12, 0.02 + Math.abs(i) * 0.02, 0.035, 0.03); g.fill(); }
+      g.fillStyle = '#ff9ad5'; ell(0, 0.14, 0.07, 0.045); g.fill();
+    }
+  }
+  for (let side = -1; side <= 1; side += 2) {
+    g.strokeStyle = dark; g.lineWidth = 0.025; g.beginPath(); g.moveTo(side * 0.08, -0.16); g.lineTo(side * 0.1, -0.27); g.stroke();
+    g.fillStyle = '#fff'; ell(side * 0.1, -0.29, 0.045, 0.05); g.fill();
+    g.fillStyle = '#111'; ell(side * 0.1, -0.29, 0.02, 0.025); g.fill();
+    if (!male && !baby) { g.strokeStyle = '#111'; g.lineWidth = 0.012; g.beginPath(); g.moveTo(side * 0.14, -0.31); g.lineTo(side * 0.19, -0.35); g.stroke(); }
+  }
+  g.restore();
+}
+
+function drawFarmer(x, y, face, phase, moving) {
+  const u = cell * PLAYER_DRAW_SCALE;
+  g.save(); g.translate(x, y); g.scale(u * (face < 0 ? -1 : 1), u);
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const s = moving ? Math.sin(phase) : Math.sin(phase * 0.25) * 0.25;
+  const swing = moving ? (s + 1) / 2 : 0.15 + 0.1 * Math.sin(phase * 0.25);
+  const bob = moving ? Math.abs(Math.sin(phase)) * 0.03 : 0;
+  g.fillStyle = '#0004'; ell(0, 0.22, 0.2, 0.06); g.fill();
+  g.strokeStyle = '#2b3f6b'; g.lineWidth = 0.07;
+  for (let k = -1; k <= 1; k += 2) { const l = moving ? Math.sin(phase + (k > 0 ? Math.PI : 0)) * 0.08 : 0; g.beginPath(); g.moveTo(k * 0.05, 0.08 - bob); g.lineTo(k * 0.05 + l, 0.22); g.stroke(); g.fillStyle = '#4a2c12'; ell(k * 0.05 + l + 0.02, 0.23, 0.06, 0.03); g.fill(); }
+  g.fillStyle = '#3a5ea8'; ell(0, -0.02 - bob, 0.14, 0.15); g.fill();
+  g.fillStyle = '#f2f2e6'; ell(0, -0.1 - bob, 0.1, 0.07); g.fill();
+  g.fillStyle = '#e8b98d'; ell(0, -0.18 - bob, 0.18 / 1.1, 0.18 / 1.1); g.fill();
+  g.fillStyle = '#222'; ell(0.06, -0.19 - bob, 0.018, 0.022); g.fill();
+  g.strokeStyle = '#a2553a'; g.lineWidth = 0.014; g.beginPath(); g.arc(0.06, -0.15 - bob, 0.03, 0.2, 2.6); g.stroke();
+  g.fillStyle = '#f1d27a'; ell(0, -0.27 - bob, 0.27, 0.06); g.fill();
+  g.fillStyle = '#e4b84f'; g.beginPath(); g.arc(0, -0.28 - bob, 0.14, Math.PI, 0); g.fill();
+  g.fillStyle = '#c0392b'; g.fillRect(-0.14, -0.285 - bob, 0.28, 0.03);
+  // 괭이질: 천천히 들어 올렸다가 빠르게 내려찍는다
+  const lift = Math.pow(swing, 3);
+  const ang = -2.1 + 2.7 * lift;
+  const shx = 0.08, shy = -0.06 - bob;
+  const hx = shx + Math.cos(ang - 0.4) * 0.17, hy = shy + 0.05 + Math.sin(ang - 0.4) * 0.17;
+  const tx = hx + Math.cos(ang) * 0.5, ty = hy + Math.sin(ang) * 0.5;
+  g.strokeStyle = '#e8b98d'; g.lineWidth = 0.055; g.beginPath(); g.moveTo(shx, shy); g.lineTo(hx, hy); g.stroke();
+  g.strokeStyle = '#8a5a2b'; g.lineWidth = 0.04; g.beginPath(); g.moveTo(hx - Math.cos(ang) * 0.1, hy - Math.sin(ang) * 0.1); g.lineTo(tx, ty); g.stroke();
+  g.save(); g.translate(tx, ty); g.rotate(ang + Math.PI / 2);
+  g.fillStyle = '#9aa3ad'; g.beginPath(); g.moveTo(-0.02, 0); g.lineTo(0.2, -0.03); g.lineTo(0.2, 0.12); g.lineTo(-0.02, 0.06); g.closePath(); g.fill();
+  g.strokeStyle = '#4b535c'; g.lineWidth = 0.015; g.stroke();
+  g.restore();
+  if (moving && swing > 0.9) {
+    g.fillStyle = '#8a5a2bbb';
+    for (let i = 0; i < 5; i++) { ell(tx + 0.05 + i * 0.05, ty - 0.03 - (i % 2) * 0.06, 0.03, 0.03); g.fill(); }
+  }
+  g.restore();
+}
+
+function drawTractor(x, y, face, phase) {
+  const u = cell * PLAYER_DRAW_SCALE;
+  g.save(); g.translate(x, y); g.scale(u * (face < 0 ? -1 : 1), u);
+  g.fillStyle = '#0004'; ell(0, 0.24, 0.3, 0.07); g.fill();
+  g.fillStyle = '#d62828'; g.fillRect(-0.05, -0.1, 0.34, 0.18); g.fillRect(0.1, -0.16, 0.16, 0.08);
+  g.fillStyle = '#9ad7ff'; g.fillRect(-0.2, -0.26, 0.2, 0.2);
+  g.strokeStyle = '#333'; g.lineWidth = 0.025; g.strokeRect(-0.2, -0.26, 0.2, 0.2);
+  g.fillStyle = '#e8b98d'; ell(-0.1, -0.17, 0.05, 0.05); g.fill();
+  g.fillStyle = '#f1d27a'; ell(-0.1, -0.215, 0.07, 0.02); g.fill();
+  g.fillStyle = '#555'; g.fillRect(0.25, -0.26, 0.03, 0.14);
+  const wheel = (wx, wy, r) => { g.save(); g.translate(wx, wy); g.rotate(phase); g.fillStyle = '#222'; g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill(); g.fillStyle = '#e8b800'; g.beginPath(); g.arc(0, 0, r * 0.5, 0, 7); g.fill(); g.fillStyle = '#222'; g.fillRect(-r * 0.08, -r * 0.45, r * 0.16, r * 0.9); g.restore(); };
+  wheel(-0.06, 0.1, 0.17); wheel(0.24, 0.16, 0.1);
+  g.restore();
+}
+
+function drawFurrow() {
+  const segs = furrowSegments();
+  if (!segs.length) return;
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const path = () => { g.beginPath(); segs.forEach((s, i) => { if (i === 0) g.moveTo(sx(s[0][0]), sy(s[0][1])); g.lineTo(sx(s[1][0]), sy(s[1][1])); }); };
+  g.strokeStyle = '#3b1f0a'; g.lineWidth = cell * FURROW_WIDTH; path(); g.stroke();
+  g.strokeStyle = '#c9944f'; g.lineWidth = cell * FURROW_WIDTH * 0.35; path(); g.stroke();
+}
+
+function drawPowerup(p) {
+  const r = POWERUP_RADIUS * cell, x = sx(p.x), y = sy(p.y);
+  g.save(); g.translate(x, y); g.rotate(p.angle);
+  g.fillStyle = '#ffffffee'; g.shadowColor = '#ffd54a'; g.shadowBlur = 14;
+  g.beginPath(); g.arc(0, 0, r, 0, 7); g.fill(); g.shadowBlur = 0;
+  const im = imgs[p.kind];
+  if (im && im.complete && im.naturalWidth) g.drawImage(im, -r * 0.9, -r * 0.9, r * 1.8, r * 1.8);
+  else { g.fillStyle = '#c01cb8'; g.font = 'bold ' + r + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(p.kind === 'jiju' ? 'J' : 'B', 0, 0); }
+  g.restore();
+}
+
+function draw() {
+  g.fillStyle = '#0b0620'; g.fillRect(0, 0, cssW, cssH);
+  const x0 = Math.max(0, Math.floor(cam.x)), x1 = Math.min(W - 1, Math.ceil(cam.x + viewW));
+  const y0 = Math.max(0, Math.floor(cam.y)), y1 = Math.min(H - 1, Math.ceil(cam.y + viewH));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const px = (x - cam.x) * cell, py = (y - cam.y) * cell;
+    const v = board[y][x];
+    if (v === 1) {
+      g.drawImage(sceneCanvas, x * TILE, y * TILE, TILE, TILE, px, py, cell + 1, cell + 1);
+      const a = 1 - (playTime - claimStamp[y][x]) / 0.7;
+      if (a > 0) { g.globalAlpha = a; g.drawImage(soilCanvas, x * TILE, y * TILE, TILE, TILE, px, py, cell + 1, cell + 1); g.globalAlpha = 1; }
+    } else g.drawImage(soilCanvas, x * TILE, y * TILE, TILE, TILE, px, py, cell + 1, cell + 1);
+  }
+  g.strokeStyle = '#ffd54a'; g.lineWidth = 3; g.shadowColor = '#ff3df2'; g.shadowBlur = 10;
+  g.strokeRect(-cam.x * cell, -cam.y * cell, W * cell, H * cell); g.shadowBlur = 0;
+  drawFurrow();
+  powerups.forEach(drawPowerup);
+  const items = [];
+  babies.forEach(b => items.push({ y: b.y, f: () => drawCrab(sx(b.x), sy(b.y), { type: 'baby', color: b.color, scale: b.scale, legPhase: b.legPhase }) }));
+  enemies.forEach(e => items.push({ y: e.y, f: () => drawCrab(sx(e.x), sy(e.y), { type: e.type, sex: e.sex, legPhase: e.legPhase }) }));
+  items.push({ y: player.y, f: () => {
+    const face = player.dx < 0 ? -1 : 1;
+    if (playerSpriteType() === 'tractor') drawTractor(sx(player.x), sy(player.y), face, walkPhase);
+    else drawFarmer(sx(player.x), sy(player.y), face, walkPhase, player.moving);
+  } });
+  items.sort((a, b) => a.y - b.y).forEach(i => i.f());
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  effects.forEach(e => {
+    g.globalAlpha = 1 - e.t / e.life; g.fillStyle = e.text === '+' ? '#7CFC00' : '#ffe45e'; g.strokeStyle = '#000'; g.lineWidth = 3;
+    g.font = '900 ' + Math.round(cell * 0.7) + 'px sans-serif';
+    const ex = sx(e.x), ey = sy(e.y) - e.t * cell;
+    g.strokeText(e.text, ex, ey); g.fillText(e.text, ex, ey); g.globalAlpha = 1;
+  });
+  if (tractorRemaining > 0) {
+    g.fillStyle = '#ffe45e'; g.font = '900 14px sans-serif'; g.strokeStyle = '#000'; g.lineWidth = 3;
+    const t = '트랙터 ' + Math.ceil(tractorRemaining) + '초'; g.strokeText(t, cssW / 2, 62); g.fillText(t, cssW / 2, 62);
+  }
+}
+
+resize();
+initBoard();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

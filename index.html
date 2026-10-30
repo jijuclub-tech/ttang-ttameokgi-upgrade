@@ -685,24 +685,31 @@ function drawCrab(x, y, o) {
   g.lineCap = 'round'; g.lineJoin = 'round';
   g.fillStyle = '#0003'; ell(0, 0.2, 0.36, 0.1); g.fill();
   const ph = o.legPhase || 0;
-  g.strokeStyle = dark; g.lineWidth = 0.05;
-  for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 3; i++) {
-    const a = Math.sin(ph + i * 1.3 + (side > 0 ? Math.PI : 0)) * 0.12;
-    const bx = side * 0.22, by = -0.02 + i * 0.09;
-    g.beginPath(); g.moveTo(bx, by); g.lineTo(side * (0.38 + a), by - 0.1 + a * 0.5); g.lineTo(side * (0.5 + a), by + 0.12); g.stroke();
+  for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 4; i++) {
+    const a = Math.sin(ph + i * 1.3 + (side > 0 ? Math.PI : 0)) * 0.1;
+    const bx = side * 0.2, by = -0.05 + i * 0.07;
+    const kx = side * (0.38 + a), ky = by - 0.1 + a * 0.5, ex = side * (0.5 + a), ey = by + 0.13;
+    g.strokeStyle = dark; g.lineWidth = 0.075;
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(kx, ky); g.lineTo(ex, ey); g.stroke();
+    g.strokeStyle = shell; g.lineWidth = 0.045;
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(kx, ky); g.lineTo(ex, ey); g.stroke();
+    g.fillStyle = dark; ell(kx, ky, 0.03, 0.03); g.fill();
   }
   // 집게: 수컷은 크게, 암컷·새끼는 작게
-  const cs = baby ? 0.5 : (male ? 1.0 : 0.45);
+  const cs = baby ? 0.5 : (male ? 1.3 : 0.42);
   const open = (Math.sin(ph * 0.7 + 1) + 1) * 0.12 * cs + 0.05;
   for (let side = -1; side <= 1; side += 2) {
     const ax = side * 0.3, ay = -0.12;
     const hx = side * (0.36 + 0.08 * cs), hy = -0.34 - 0.12 * cs;
+    g.strokeStyle = dark; g.lineWidth = 0.07 * (0.6 + 0.4 * cs) + 0.03;
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(side * 0.42, -0.22); g.lineTo(hx, hy); g.stroke();
     g.strokeStyle = shell; g.lineWidth = 0.07 * (0.6 + 0.4 * cs);
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(side * 0.42, -0.22); g.lineTo(hx, hy); g.stroke();
     for (let k = -1; k <= 1; k += 2) {
       g.save(); g.translate(hx, hy); g.rotate(k * open * 2.2 + side * 0.15);
       g.fillStyle = shell; g.strokeStyle = dark; g.lineWidth = 0.02;
       g.beginPath(); g.moveTo(-0.07 * cs, 0); g.quadraticCurveTo(-0.17 * cs, -0.16 * cs, 0, -0.3 * cs); g.quadraticCurveTo(0.17 * cs, -0.16 * cs, 0.07 * cs, 0); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = light; g.beginPath(); g.moveTo(-0.03 * cs, -0.1 * cs); g.lineTo(0, -0.17 * cs); g.lineTo(0.03 * cs, -0.1 * cs); g.fill();
       g.restore();
     }
     g.fillStyle = shell; ell(hx, hy + 0.02, 0.09 * cs + 0.02, 0.08 * cs + 0.02); g.fill(); g.stroke();
@@ -711,6 +718,9 @@ function drawCrab(x, y, o) {
   gr.addColorStop(0, light); gr.addColorStop(0.35, shell); gr.addColorStop(1, dark);
   g.fillStyle = gr; g.strokeStyle = dark; g.lineWidth = 0.03;
   ell(0, 0, 0.32, 0.22); g.fill(); g.stroke();
+  g.strokeStyle = dark; g.lineWidth = 0.015; g.globalAlpha = 0.6;
+  for (let i = -1; i <= 1; i++) { g.beginPath(); g.arc(0, 0.12, 0.12 + (i + 1) * 0.07, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); }
+  g.globalAlpha = 1;
   if (!baby) {
     g.fillStyle = dark;
     if (male) { for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 0.1 - 0.03, -0.18 + Math.abs(i) * 0.02); g.lineTo(i * 0.1, -0.27 + Math.abs(i) * 0.03); g.lineTo(i * 0.1 + 0.03, -0.18 + Math.abs(i) * 0.02); g.fill(); } }
@@ -736,14 +746,20 @@ function drawFarmer(x, y, face, phase, moving) {
   const swing = moving ? (s + 1) / 2 : 0.15 + 0.1 * Math.sin(phase * 0.25);
   const bob = moving ? Math.abs(Math.sin(phase)) * 0.03 : 0;
   g.fillStyle = '#0004'; ell(0, 0.22, 0.2, 0.06); g.fill();
-  g.strokeStyle = '#2b3f6b'; g.lineWidth = 0.07;
-  for (let k = -1; k <= 1; k += 2) { const l = moving ? Math.sin(phase + (k > 0 ? Math.PI : 0)) * 0.08 : 0; g.beginPath(); g.moveTo(k * 0.05, 0.08 - bob); g.lineTo(k * 0.05 + l, 0.22); g.stroke(); g.fillStyle = '#4a2c12'; ell(k * 0.05 + l + 0.02, 0.23, 0.06, 0.03); g.fill(); }
-  g.fillStyle = '#3a5ea8'; ell(0, -0.02 - bob, 0.14, 0.15); g.fill();
-  g.fillStyle = '#f2f2e6'; ell(0, -0.1 - bob, 0.1, 0.07); g.fill();
+  g.strokeStyle = '#1f3d82'; g.lineWidth = 0.09;
+  for (let k = -1; k <= 1; k += 2) { const l = moving ? Math.sin(phase + (k > 0 ? Math.PI : 0)) * 0.08 : 0; g.beginPath(); g.moveTo(k * 0.05, 0.08 - bob); g.lineTo(k * 0.05 + l, 0.22); g.stroke(); g.fillStyle = '#3b2210'; ell(k * 0.05 + l + 0.025, 0.23, 0.07, 0.035); g.fill(); }
+  g.fillStyle = '#f2f2e6'; ell(0, -0.06 - bob, 0.15, 0.14); g.fill();
+  g.fillStyle = '#2f55b5'; g.beginPath(); g.moveTo(-0.14, 0.1 - bob); g.lineTo(-0.11, -0.05 - bob); g.lineTo(0.11, -0.05 - bob); g.lineTo(0.14, 0.1 - bob); g.closePath(); g.fill();
+  g.strokeStyle = '#2f55b5'; g.lineWidth = 0.035;
+  g.beginPath(); g.moveTo(-0.09, -0.05 - bob); g.lineTo(-0.07, -0.13 - bob); g.moveTo(0.09, -0.05 - bob); g.lineTo(0.07, -0.13 - bob); g.stroke();
+  g.fillStyle = '#f5d142'; ell(-0.08, -0.03 - bob, 0.02, 0.02); g.fill(); ell(0.08, -0.03 - bob, 0.02, 0.02); g.fill();
+  g.fillStyle = '#1f3d82'; g.fillRect(-0.06, 0 - bob, 0.12, 0.06);
   g.fillStyle = '#e8b98d'; ell(0, -0.18 - bob, 0.18 / 1.1, 0.18 / 1.1); g.fill();
   g.fillStyle = '#222'; ell(0.06, -0.19 - bob, 0.018, 0.022); g.fill();
   g.strokeStyle = '#a2553a'; g.lineWidth = 0.014; g.beginPath(); g.arc(0.06, -0.15 - bob, 0.03, 0.2, 2.6); g.stroke();
+  g.fillStyle = '#c99a2e'; ell(0, -0.265 - bob, 0.29, 0.07); g.fill();
   g.fillStyle = '#f1d27a'; ell(0, -0.27 - bob, 0.27, 0.06); g.fill();
+  g.fillStyle = '#5a3a1a'; g.beginPath(); g.arc(0, -0.2 - bob, 0.19, Math.PI * 1.05, Math.PI * 1.95); g.fill();
   g.fillStyle = '#e4b84f'; g.beginPath(); g.arc(0, -0.28 - bob, 0.14, Math.PI, 0); g.fill();
   g.fillStyle = '#c0392b'; g.fillRect(-0.14, -0.285 - bob, 0.28, 0.03);
   // 괭이질: 천천히 들어 올렸다가 빠르게 내려찍는다
